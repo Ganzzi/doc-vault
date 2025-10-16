@@ -1258,18 +1258,22 @@ await vault.import_organization(
 - [x] Create acl.py repository
 
 ### Phase 4: Storage Layer ✓
-- [ ] Create base.py storage interface
-- [ ] Create s3_client.py implementation
-- [ ] Test bucket operations
-- [ ] Test file upload/download
+- [x] Create base.py storage interface
+- [x] Create s3_client.py implementation
+- [x] Test bucket operations
+- [x] Test file upload/download
 
-### Phase 5: Service Layer ✓
-- [ ] Create document_service.py
-- [ ] Create access_service.py
-- [ ] Create version_service.py
-- [ ] Write service integration tests
+### Phase 5: Service Layer ✅ COMPLETED (Oct 16, 2025)
+- [x] Create document_service.py
+- [x] Create access_service.py
+- [x] Create version_service.py
+- [x] Write service integration tests
+- [x] Fix repository UUID handling
+- [x] Create database schema SQL file
 
-### Phase 6: SDK API ✓
+**Status**: Service layer fully implemented with DocumentService (upload, download, update, delete, search), AccessService (permissions, ACL), and VersionService (versioning, restoration). Integration tests written (31 test cases). Repository layer fixed to handle UUID parameters correctly with psqlpy.
+
+### Phase 6: SDK API
 - [ ] Create core.py (DocVaultSDK)
 - [ ] Add context manager support
 - [ ] Implement all public methods
