@@ -1250,12 +1250,12 @@ await vault.import_organization(
 - [x] Create init_db.py script
 
 ### Phase 3: Repository Layer ✓
-- [ ] Create base.py repository
-- [ ] Create organization.py repository
-- [ ] Create agent.py repository
-- [ ] Create document.py repository
-- [ ] Create version.py repository
-- [ ] Create acl.py repository
+- [x] Create base.py repository
+- [x] Create organization.py repository
+- [x] Create agent.py repository
+- [x] Create document.py repository
+- [x] Create version.py repository
+- [x] Create acl.py repository
 
 ### Phase 4: Storage Layer ✓
 - [ ] Create base.py storage interface
