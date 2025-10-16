@@ -275,9 +275,10 @@ async def main():
             print("\n🚫 Demonstrating access revocation...")
 
             # TechCorp lead revokes consultant's access
-            await vault.revoke_access(
+            await vault.revoke(
                 document_id=tech_doc.id,
                 agent_id="consultant-001",
+                permission="READ",
                 revoked_by="tech-lead-001",
             )
             print("✅ TechCorp Lead revoked Consultant's access")

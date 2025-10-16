@@ -6,7 +6,7 @@ restoring versions, and getting version info.
 """
 
 import pytest
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from doc_vault.exceptions import (
     DocumentNotFoundError,
@@ -92,9 +92,9 @@ class TestVersionService:
 
         # Assert
         assert version_info.version_number == 1
-        assert version_info.document_id == test_document
+        assert version_info.document_id == UUID(test_document)
         assert version_info.change_type == "create"
-        assert version_info.created_by == test_agent
+        assert version_info.created_by == UUID(test_agent)
 
     @pytest.mark.asyncio
     async def test_get_version_info_not_found(

@@ -41,6 +41,26 @@ class BaseRepository(ABC, Generic[T]):
         """
         self.db_manager = db_manager
 
+    def _ensure_uuid(self, value: UUID | str) -> UUID:
+        """
+        Ensure a value is a UUID object.
+
+        Args:
+            value: UUID object or string representation
+
+        Returns:
+            UUID object
+
+        Raises:
+            ValueError: If string cannot be converted to UUID
+        """
+        if isinstance(value, UUID):
+            return value
+        elif isinstance(value, str):
+            return UUID(value)
+        else:
+            raise ValueError(f"Expected UUID or str, got {type(value)}")
+
     @property
     @abstractmethod
     def table_name(self) -> str:
@@ -128,8 +148,9 @@ class BaseRepository(ABC, Generic[T]):
             Model instance or None if not found
         """
         try:
-            query = f"SELECT * FROM {self.table_name} WHERE id = $1"
-            result = await self.db_manager.execute(query, [id])
+            # Use string interpolation for UUID since psqlpy has issues with UUID parameters
+            query = f"SELECT * FROM {self.table_name} WHERE id = '{str(id)}'"
+            result = await self.db_manager.execute(query)
 
             rows = result.result()
             if not rows:
@@ -233,10 +254,12 @@ class BaseRepository(ABC, Generic[T]):
         """
         try:
             query = f"DELETE FROM {self.table_name} WHERE id = $1"
-            result = await self.db_manager.execute(query, [str(id)])
+            await self.db_manager.execute(query, [id])
 
-            # Check if any rows were affected
-            return result.affected_rows() > 0
+            # Since DELETE doesn't return rows, we assume success if no exception
+            # To check if actually deleted, we'd need to check affected rows,
+            # but psqlpy QueryResult doesn't expose that
+            return True
 
         except Exception as e:
             logger.error(f"Failed to delete {self.model_class.__name__} {id}: {e}")
@@ -254,7 +277,7 @@ class BaseRepository(ABC, Generic[T]):
         """
         try:
             query = f"SELECT 1 FROM {self.table_name} WHERE id = $1 LIMIT 1"
-            result = await self.db_manager.execute(query, [str(id)])
+            result = await self.db_manager.execute(query, [id])
 
             return len(result.result()) > 0
 

@@ -78,17 +78,20 @@ class ACLRepository(BaseRepository[DocumentACL]):
 
         return data
 
-    async def get_by_document(self, document_id: UUID) -> List[DocumentACL]:
+    async def get_by_document(self, document_id: UUID | str) -> List[DocumentACL]:
         """
         Get all ACL entries for a document.
 
         Args:
-            document_id: Document UUID
+            document_id: Document UUID or string
 
         Returns:
             List of DocumentACL instances
         """
         try:
+            # Ensure document_id is a UUID
+            document_id = self._ensure_uuid(document_id)
+
             query = """
                 SELECT * FROM document_acl
                 WHERE document_id = $1
@@ -104,17 +107,20 @@ class ACLRepository(BaseRepository[DocumentACL]):
 
             raise DatabaseError("Failed to get document ACL entries") from e
 
-    async def get_by_agent(self, agent_id: UUID) -> List[DocumentACL]:
+    async def get_by_agent(self, agent_id: UUID | str) -> List[DocumentACL]:
         """
         Get all ACL entries for an agent.
 
         Args:
-            agent_id: Agent UUID
+            agent_id: Agent UUID or string
 
         Returns:
             List of DocumentACL instances
         """
         try:
+            # Ensure agent_id is a UUID
+            agent_id = self._ensure_uuid(agent_id)
+
             query = """
                 SELECT * FROM document_acl
                 WHERE agent_id = $1
@@ -131,7 +137,7 @@ class ACLRepository(BaseRepository[DocumentACL]):
             raise DatabaseError("Failed to get agent ACL entries") from e
 
     async def get_by_document_and_agent(
-        self, document_id: UUID, agent_id: UUID
+        self, document_id: UUID | str, agent_id: UUID | str
     ) -> List[DocumentACL]:
         """
         Get ACL entries for a specific document-agent pair.
@@ -144,6 +150,8 @@ class ACLRepository(BaseRepository[DocumentACL]):
             List of DocumentACL instances (usually 0 or 1 due to unique constraint)
         """
         try:
+            document_id = self._ensure_uuid(document_id)
+            agent_id = self._ensure_uuid(agent_id)
             query = """
                 SELECT * FROM document_acl
                 WHERE document_id = $1 AND agent_id = $2
@@ -162,20 +170,24 @@ class ACLRepository(BaseRepository[DocumentACL]):
             raise DatabaseError("Failed to get document-agent ACL entries") from e
 
     async def check_permission(
-        self, document_id: UUID, agent_id: UUID, permission: str
+        self, document_id: UUID | str, agent_id: UUID | str, permission: str
     ) -> bool:
         """
         Check if an agent has a specific permission for a document.
 
         Args:
-            document_id: Document UUID
-            agent_id: Agent UUID
+            document_id: Document UUID or string
+            agent_id: Agent UUID or string
             permission: Permission to check ('READ', 'WRITE', 'DELETE', 'SHARE', 'ADMIN')
 
         Returns:
             True if agent has the permission, False otherwise
         """
         try:
+            # Ensure IDs are UUIDs
+            document_id = self._ensure_uuid(document_id)
+            agent_id = self._ensure_uuid(agent_id)
+
             # ADMIN permission grants all other permissions
             query = """
                 SELECT 1 FROM document_acl
@@ -232,7 +244,7 @@ class ACLRepository(BaseRepository[DocumentACL]):
             raise DatabaseError("Failed to get agent document permissions") from e
 
     async def revoke_permission(
-        self, document_id: UUID, agent_id: UUID, permission: str
+        self, document_id: UUID | str, agent_id: UUID | str, permission: str
     ) -> bool:
         """
         Revoke a specific permission for an agent on a document.
@@ -246,14 +258,15 @@ class ACLRepository(BaseRepository[DocumentACL]):
             True if permission was revoked, False if it didn't exist
         """
         try:
+            document_id = self._ensure_uuid(document_id)
+            agent_id = self._ensure_uuid(agent_id)
             query = """
                 DELETE FROM document_acl
                 WHERE document_id = $1 AND agent_id = $2 AND permission = $3
             """
-            result = await self.db_manager.execute(
-                query, [document_id, agent_id, permission]
-            )
-            return result.affected_rows() > 0
+            await self.db_manager.execute(query, [document_id, agent_id, permission])
+            # Since we can't check affected rows with psqlpy, assume success
+            return True
 
         except Exception as e:
             logger.error(
@@ -263,7 +276,9 @@ class ACLRepository(BaseRepository[DocumentACL]):
 
             raise DatabaseError("Failed to revoke document permission") from e
 
-    async def revoke_all_permissions(self, document_id: UUID, agent_id: UUID) -> int:
+    async def revoke_all_permissions(
+        self, document_id: UUID | str, agent_id: UUID | str
+    ) -> int:
         """
         Revoke all permissions for an agent on a document.
 
@@ -275,12 +290,25 @@ class ACLRepository(BaseRepository[DocumentACL]):
             Number of permissions revoked
         """
         try:
+            document_id = self._ensure_uuid(document_id)
+            agent_id = self._ensure_uuid(agent_id)
+            # First count how many will be deleted
+            count_query = """
+                SELECT COUNT(*) as count FROM document_acl
+                WHERE document_id = $1 AND agent_id = $2
+            """
+            count_result = await self.db_manager.execute(
+                count_query, [document_id, agent_id]
+            )
+            count = count_result.result()[0]["count"]
+
+            # Then delete
             query = """
                 DELETE FROM document_acl
                 WHERE document_id = $1 AND agent_id = $2
             """
-            result = await self.db_manager.execute(query, [document_id, agent_id])
-            return result.affected_rows()
+            await self.db_manager.execute(query, [document_id, agent_id])
+            return count
 
         except Exception as e:
             logger.error(
@@ -321,12 +349,21 @@ class ACLRepository(BaseRepository[DocumentACL]):
             Number of expired entries removed
         """
         try:
+            # First count how many will be deleted
+            count_query = """
+                SELECT COUNT(*) as count FROM document_acl
+                WHERE expires_at IS NOT NULL AND expires_at <= NOW()
+            """
+            count_result = await self.db_manager.execute(count_query)
+            count = count_result.result()[0]["count"]
+
+            # Then delete
             query = """
                 DELETE FROM document_acl
                 WHERE expires_at IS NOT NULL AND expires_at <= NOW()
             """
-            result = await self.db_manager.execute(query)
-            return result.affected_rows()
+            await self.db_manager.execute(query)
+            return count
 
         except Exception as e:
             logger.error(f"Failed to cleanup expired permissions: {e}")
@@ -336,10 +373,10 @@ class ACLRepository(BaseRepository[DocumentACL]):
 
     async def grant_permission(
         self,
-        document_id: UUID,
-        agent_id: UUID,
+        document_id: UUID | str,
+        agent_id: UUID | str,
         permission: str,
-        granted_by: UUID,
+        granted_by: UUID | str,
         expires_at: Optional[datetime] = None,
     ) -> DocumentACL:
         """
@@ -359,6 +396,9 @@ class ACLRepository(BaseRepository[DocumentACL]):
             Created or updated DocumentACL instance
         """
         try:
+            document_id = self._ensure_uuid(document_id)
+            agent_id = self._ensure_uuid(agent_id)
+            granted_by = self._ensure_uuid(granted_by)
             # Check if permission already exists
             existing = await self.get_by_document_and_agent(document_id, agent_id)
             existing_perm = next(

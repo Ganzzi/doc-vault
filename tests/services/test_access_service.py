@@ -6,8 +6,8 @@ and checking permissions.
 """
 
 import pytest
-from datetime import datetime, timedelta
-from uuid import uuid4
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4, UUID
 
 from doc_vault.exceptions import (
     DocumentNotFoundError,
@@ -54,10 +54,10 @@ class TestAccessService:
         )
 
         # Assert
-        assert acl.document_id == test_document
-        assert acl.agent_id == str(grantee.id)
+        assert acl.document_id == UUID(test_document)
+        assert acl.agent_id == grantee.id
         assert acl.permission == "READ"
-        assert acl.granted_by == test_agent
+        assert acl.granted_by == UUID(test_agent)
 
     @pytest.mark.asyncio
     async def test_grant_access_invalid_permission(
@@ -67,12 +67,10 @@ class TestAccessService:
         test_agent: str,
     ):
         """Test granting invalid permission."""
-        fake_agent_id = str(uuid4())
-
         with pytest.raises(ValidationError, match="Invalid permission 'INVALID'"):
             await access_service.grant_access(
                 document_id=test_document,
-                agent_id=fake_agent_id,
+                agent_id=test_agent,
                 permission="INVALID",
                 granted_by=test_agent,
             )
@@ -254,7 +252,7 @@ class TestAccessService:
 
         # Assert
         assert len(accessible_docs) >= 1
-        assert any(doc.id == test_document for doc in accessible_docs)
+        assert any(doc.id == UUID(test_document) for doc in accessible_docs)
 
     @pytest.mark.asyncio
     async def test_list_accessible_documents_no_access(
@@ -348,7 +346,7 @@ class TestAccessService:
         temp_access = await agent_repo.create_from_create_schema(temp_access_create)
 
         # Set expiration to 1 hour from now
-        expires_at = datetime.utcnow() + timedelta(hours=1)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
         # Act - grant permission with expiration
         acl = await access_service.grant_access(
@@ -361,7 +359,10 @@ class TestAccessService:
 
         # Assert
         assert acl.expires_at is not None
-        assert acl.expires_at.replace(tzinfo=None) == expires_at.replace(microsecond=0)
+        # Compare datetimes ignoring timezone and microseconds
+        assert acl.expires_at.replace(microsecond=0) == expires_at.replace(
+            tzinfo=None, microsecond=0
+        )
 
         # Should have permission now
         has_permission = await access_service.check_permission(

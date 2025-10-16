@@ -189,20 +189,39 @@ class AgentRepository(BaseRepository[Agent]):
             # Convert create schema to dict
             data = create_data.model_dump()
 
-            # Build column names and placeholders for insert
+            # Build column names and values for insert
             columns = list(data.keys())
-            placeholders = [f"${i+1}" for i in range(len(columns))]
             values = list(data.values())
 
+            # Build the query with string interpolation for UUIDs
+            column_list = ", ".join(columns)
+            value_list = []
+            for val in values:
+                if isinstance(val, UUID):
+                    value_list.append(f"'{str(val)}'")
+                elif isinstance(val, str):
+                    # Escape single quotes in strings
+                    escaped_val = val.replace("'", "''")
+                    value_list.append(f"'{escaped_val}'")
+                elif isinstance(val, bool):
+                    value_list.append("true" if val else "false")
+                elif isinstance(val, dict):
+                    # JSONB values
+                    import json
+
+                    value_list.append(f"'{json.dumps(val)}'")
+                elif val is None:
+                    value_list.append("NULL")
+                else:
+                    value_list.append(str(val))
+
             query = f"""
-                INSERT INTO {self.table_name} ({', '.join(columns)})
-                VALUES ({', '.join(placeholders)})
+                INSERT INTO {self.table_name} ({column_list})
+                VALUES ({', '.join(value_list)})
                 RETURNING *
             """
 
-            logger.debug(f"Creating agent: {query}")
-
-            result = await self.db_manager.execute(query, values)
+            result = await self.db_manager.execute(query)
             row = result.result()[0]  # First (and only) row
 
             return self._row_to_model(row)

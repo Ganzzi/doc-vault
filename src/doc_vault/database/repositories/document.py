@@ -93,18 +93,21 @@ class DocumentRepository(BaseRepository[Document]):
 
         return data
 
-    async def get_by_id(self, id: UUID) -> Optional[Document]:
+    async def get_by_id(self, id: UUID | str) -> Optional[Document]:
         """
         Get a document by its UUID.
         Override base implementation to exclude search_vector column.
 
         Args:
-            id: Document UUID
+            id: Document UUID or string
 
         Returns:
             Document instance or None if not found
         """
         try:
+            # Ensure id is a UUID
+            id = self._ensure_uuid(id)
+
             # Exclude search_vector column to avoid tsvector conversion issues
             columns = [
                 "id",
@@ -214,7 +217,7 @@ class DocumentRepository(BaseRepository[Document]):
 
     async def get_by_organization(
         self,
-        organization_id: UUID,
+        organization_id: UUID | str,
         status: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
@@ -223,7 +226,7 @@ class DocumentRepository(BaseRepository[Document]):
         Get documents for an organization.
 
         Args:
-            organization_id: Organization UUID
+            organization_id: Organization UUID or string
             status: Optional status filter ('active', 'draft', 'archived', 'deleted')
             limit: Maximum number of documents to return
             offset: Number of documents to skip
@@ -232,6 +235,9 @@ class DocumentRepository(BaseRepository[Document]):
             List of Document instances
         """
         try:
+            # Ensure organization_id is a UUID
+            organization_id = self._ensure_uuid(organization_id)
+
             # Exclude search_vector column to avoid tsvector conversion issues
             columns = [
                 "id",
@@ -298,11 +304,30 @@ class DocumentRepository(BaseRepository[Document]):
             List of Document instances
         """
         try:
-            query = """
-                SELECT * FROM documents
+            # Exclude search_vector column to avoid tsvector conversion issues
+            columns = [
+                "id",
+                "organization_id",
+                "name",
+                "description",
+                "filename",
+                "file_size",
+                "mime_type",
+                "storage_path",
+                "current_version",
+                "status",
+                "created_by",
+                "updated_by",
+                "metadata",
+                "tags",
+                "created_at",
+                "updated_at",
+            ]
+            query = f"""
+                SELECT {', '.join(columns)} FROM documents
                 WHERE created_by = $1
             """
-            params = [str(agent_id)]
+            params = [agent_id]
             param_index = 2
 
             if status:
@@ -324,13 +349,13 @@ class DocumentRepository(BaseRepository[Document]):
             raise DatabaseError("Failed to get documents created by agent") from e
 
     async def search_by_name(
-        self, organization_id: UUID, name_query: str, limit: int = 50
+        self, organization_id: UUID | str, name_query: str, limit: int = 50
     ) -> List[Document]:
         """
         Search documents by name within an organization.
 
         Args:
-            organization_id: Organization UUID
+            organization_id: Organization UUID or string
             name_query: Search query for document name
             limit: Maximum number of results
 
@@ -338,6 +363,9 @@ class DocumentRepository(BaseRepository[Document]):
             List of Document instances
         """
         try:
+            # Ensure organization_id is a UUID
+            organization_id = self._ensure_uuid(organization_id)
+
             # Exclude search_vector column to avoid tsvector conversion issues
             columns = [
                 "id",
@@ -378,7 +406,11 @@ class DocumentRepository(BaseRepository[Document]):
             raise DatabaseError("Failed to search documents by name") from e
 
     async def get_by_tags(
-        self, organization_id: UUID, tags: List[str], limit: int = 100, offset: int = 0
+        self,
+        organization_id: UUID | str,
+        tags: List[str],
+        limit: int = 100,
+        offset: int = 0,
     ) -> List[Document]:
         """
         Get documents that have any of the specified tags.
@@ -393,9 +425,28 @@ class DocumentRepository(BaseRepository[Document]):
             List of Document instances
         """
         try:
+            # Exclude search_vector column to avoid tsvector conversion issues
+            columns = [
+                "id",
+                "organization_id",
+                "name",
+                "description",
+                "filename",
+                "file_size",
+                "mime_type",
+                "storage_path",
+                "current_version",
+                "status",
+                "created_by",
+                "updated_by",
+                "metadata",
+                "tags",
+                "created_at",
+                "updated_at",
+            ]
             # Use array overlap operator && for tag matching
-            query = """
-                SELECT * FROM documents
+            query = f"""
+                SELECT {', '.join(columns)} FROM documents
                 WHERE organization_id = $1
                   AND tags && $2
                   AND status = 'active'
@@ -403,7 +454,7 @@ class DocumentRepository(BaseRepository[Document]):
                 LIMIT $3 OFFSET $4
             """
             result = await self.db_manager.execute(
-                query, [str(organization_id), tags, limit, offset]
+                query, [organization_id, tags, limit, offset]
             )
             rows = result.result()
             return [self._row_to_model(row) for row in rows]
@@ -522,3 +573,44 @@ class DocumentRepository(BaseRepository[Document]):
             from doc_vault.exceptions import DatabaseError
 
             raise DatabaseError("Failed to create document") from e
+
+    async def delete(self, id: UUID) -> bool:
+        """
+        Soft delete a document by setting status to 'deleted'.
+
+        Args:
+            id: Document UUID
+
+        Returns:
+            True if deleted, False if not found
+
+        Raises:
+            DatabaseError: If deletion fails
+        """
+        try:
+            # Soft delete by updating status
+            updates = {"status": "deleted"}
+            updated_doc = await self.update(id, updates)
+            return updated_doc is not None
+
+        except Exception as e:
+            logger.error(f"Failed to soft delete document {id}: {e}")
+            from doc_vault.exceptions import DatabaseError
+
+            raise DatabaseError("Failed to delete document") from e
+
+    async def hard_delete(self, id: UUID) -> bool:
+        """
+        Permanently delete a document from the database.
+
+        Args:
+            id: Document UUID
+
+        Returns:
+            True if deleted, False if not found
+
+        Raises:
+            DatabaseError: If deletion fails
+        """
+        # Call the base class delete method for hard delete
+        return await super().delete(id)

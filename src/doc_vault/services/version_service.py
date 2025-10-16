@@ -48,14 +48,22 @@ class VersionService:
         self.acl_repo = ACLRepository(db_manager)
         self.agent_repo = AgentRepository(db_manager)
 
-    async def _check_agent_exists(self, agent_id: UUID) -> None:
+    def _ensure_uuid(self, value) -> UUID:
+        """Convert string UUID to UUID object if needed."""
+        if isinstance(value, str):
+            return UUID(value)
+        return value
+
+    async def _check_agent_exists(self, agent_id: UUID | str) -> None:
         """Check if an agent exists."""
+        agent_id = self._ensure_uuid(agent_id)
         agent = await self.agent_repo.get_by_id(agent_id)
         if not agent:
             raise AgentNotFoundError(f"Agent {agent_id} not found")
 
-    async def _check_document_exists(self, document_id: UUID) -> Document:
+    async def _check_document_exists(self, document_id: UUID | str) -> Document:
         """Check if a document exists and return it."""
+        document_id = self._ensure_uuid(document_id)
         from doc_vault.database.schemas.document import Document
 
         document = await self.document_repo.get_by_id(document_id)
@@ -66,9 +74,11 @@ class VersionService:
         return document
 
     async def _check_permission(
-        self, document_id: UUID, agent_id: UUID, permission: str
+        self, document_id: UUID | str, agent_id: UUID | str, permission: str
     ) -> None:
         """Check if an agent has permission for a document."""
+        document_id = self._ensure_uuid(document_id)
+        agent_id = self._ensure_uuid(agent_id)
         has_permission = await self.acl_repo.check_permission(
             document_id, agent_id, permission
         )
@@ -79,8 +89,8 @@ class VersionService:
 
     async def list_versions(
         self,
-        document_id: UUID,
-        agent_id: UUID,
+        document_id: UUID | str,
+        agent_id: UUID | str,
         limit: int = 100,
         offset: int = 0,
     ) -> List[DocumentVersion]:
@@ -101,6 +111,10 @@ class VersionService:
             AgentNotFoundError: If agent doesn't exist
             PermissionDeniedError: If agent lacks READ permission
         """
+        # Ensure UUIDs
+        document_id = self._ensure_uuid(document_id)
+        agent_id = self._ensure_uuid(agent_id)
+
         # Check agent exists
         await self._check_agent_exists(agent_id)
 
@@ -117,9 +131,9 @@ class VersionService:
 
     async def restore_version(
         self,
-        document_id: UUID,
+        document_id: UUID | str,
         version_number: int,
-        agent_id: UUID,
+        agent_id: UUID | str,
         change_description: str,
     ) -> DocumentVersion:
         """
@@ -142,6 +156,10 @@ class VersionService:
             PermissionDeniedError: If agent lacks WRITE permission
             ValidationError: If version doesn't exist
         """
+        # Ensure UUIDs
+        document_id = self._ensure_uuid(document_id)
+        agent_id = self._ensure_uuid(agent_id)
+
         # Check agent exists
         await self._check_agent_exists(agent_id)
 
@@ -192,7 +210,7 @@ class VersionService:
                     "file_size": version_to_restore.file_size,
                     "storage_path": version_to_restore.storage_path,
                     "mime_type": version_to_restore.mime_type,
-                    "updated_by": str(agent_id),
+                    "updated_by": agent_id,
                 }
                 await self.document_repo.update(document_id, doc_updates)
 
@@ -204,9 +222,9 @@ class VersionService:
 
     async def get_version_info(
         self,
-        document_id: UUID,
+        document_id: UUID | str,
         version_number: int,
-        agent_id: UUID,
+        agent_id: UUID | str,
     ) -> DocumentVersion:
         """
         Get information about a specific document version.
@@ -225,6 +243,10 @@ class VersionService:
             PermissionDeniedError: If agent lacks READ permission
             ValidationError: If version doesn't exist
         """
+        # Ensure UUIDs
+        document_id = self._ensure_uuid(document_id)
+        agent_id = self._ensure_uuid(agent_id)
+
         # Check agent exists
         await self._check_agent_exists(agent_id)
 

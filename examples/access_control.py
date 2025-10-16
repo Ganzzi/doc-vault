@@ -195,8 +195,11 @@ async def main():
             print("\n--- Revoking Permissions ---")
 
             # Revoke employee's access
-            await vault.revoke_access(
-                document_id=document.id, agent_id="employee-001", revoked_by="admin-001"
+            await vault.revoke(
+                document_id=document.id,
+                agent_id="employee-001",
+                permission="READ",
+                revoked_by="admin-001",
             )
             print("✅ Revoked Employee's access")
 
@@ -217,12 +220,12 @@ async def main():
             print("\n--- Final Access Summary ---")
 
             # Get all permissions for the document
-            permissions = await vault.get_permissions(
+            permissions = await vault.get_document_permissions(
                 document_id=document.id, agent_id="admin-001"
             )
             print(f"Document has {len(permissions)} permission entries:")
             for perm in permissions:
-                print(f"  - Agent {perm.agent_id}: {perm.permission_level}")
+                print(f"  - Agent {perm.agent_id}: {perm.permission}")
 
             print("\n🎉 Access control demonstration completed!")
             print("\nKey concepts demonstrated:")

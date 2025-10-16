@@ -7,7 +7,7 @@ functionality with real database operations.
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from doc_vault.exceptions import (
     DocumentNotFoundError,
@@ -43,8 +43,8 @@ class TestDocumentService:
         # Assert
         assert document.name == "Test Upload Document"
         assert document.description == "Test document upload"
-        assert document.organization_id == test_org
-        assert document.created_by == test_agent
+        assert document.organization_id == UUID(test_org)
+        assert document.created_by == UUID(test_agent)
         assert document.status == "active"
         assert document.current_version == 1
         assert document.tags == ["test", "upload"]
@@ -156,7 +156,7 @@ class TestDocumentService:
         assert updated_doc.name == "Updated Document Name"
         assert updated_doc.description == "Updated description"
         assert updated_doc.tags == ["updated", "test"]
-        assert updated_doc.metadata == {"updated": True, "version": 2}
+        assert updated_doc.metadata == {"test": True, "updated": True, "version": 2}
 
     @pytest.mark.asyncio
     async def test_update_metadata_no_permission(
@@ -210,10 +210,12 @@ class TestDocumentService:
         assert new_version.version_number == 2
         assert new_version.change_type == "update"
         assert new_version.change_description == "Updated content for testing"
-        assert new_version.created_by == test_agent
+        assert new_version.created_by == UUID(test_agent)
 
         # Check document was updated
-        updated_doc = await document_service.document_repo.get_by_id(test_document)
+        updated_doc = await document_service.document_repo.get_by_id(
+            UUID(test_document)
+        )
         assert updated_doc.current_version == 2
 
     @pytest.mark.asyncio
@@ -233,10 +235,10 @@ class TestDocumentService:
 
         # Assert
         assert len(documents) >= 1
-        assert any(doc.id == test_document for doc in documents)
+        assert any(doc.id == UUID(test_document) for doc in documents)
 
         # Check document details
-        test_doc = next(doc for doc in documents if doc.id == test_document)
+        test_doc = next(doc for doc in documents if doc.id == UUID(test_document))
         assert test_doc.name == "Test Document"
         assert test_doc.status == "active"
 
@@ -314,7 +316,7 @@ class TestDocumentService:
 
         # Assert
         assert len(results) >= 1
-        assert any(doc.id == test_document for doc in results)
+        assert any(doc.id == UUID(test_document) for doc in results)
 
     @pytest.mark.asyncio
     async def test_delete_document_soft_delete(

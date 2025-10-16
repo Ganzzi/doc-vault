@@ -11,6 +11,7 @@ from uuid import UUID
 from doc_vault.database.postgres_manager import PostgreSQLManager
 from doc_vault.database.repositories.base import BaseRepository
 from doc_vault.database.schemas.version import DocumentVersion, DocumentVersionCreate
+from doc_vault.exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
 
@@ -330,3 +331,60 @@ class VersionRepository(BaseRepository[DocumentVersion]):
         # Create a temporary model instance for the base class create method
         temp_model = DocumentVersion(**model_data)
         return await self.create(temp_model)
+
+    async def update(
+        self, id: UUID, updates: Dict[str, Any]
+    ) -> Optional[DocumentVersion]:
+        """
+        Update a document version by ID.
+
+        Note: Document versions don't have updated_at column, so we don't set it.
+
+        Args:
+            id: Version UUID
+            updates: Dict of field updates
+
+        Returns:
+            Updated DocumentVersion instance or None if not found
+
+        Raises:
+            DatabaseError: If update fails
+        """
+        try:
+            if not updates:
+                # No updates provided, just return current record
+                return await self.get_by_id(id)
+
+            # Build SET clause
+            set_parts = []
+            values = []
+            param_index = 1
+
+            for key, value in updates.items():
+                set_parts.append(f"{key} = ${param_index}")
+                values.append(value)
+                param_index += 1
+
+            # Add ID parameter
+            values.append(id)
+
+            query = f"""
+                UPDATE {self.table_name}
+                SET {', '.join(set_parts)}
+                WHERE id = ${param_index}
+                RETURNING *
+            """
+
+            logger.debug(f"Updating {self.model_class.__name__} {id}: {query}")
+
+            result = await self.db_manager.execute(query, values)
+            rows = result.result()
+
+            if not rows:
+                return None
+
+            return self._row_to_model(rows[0])
+
+        except Exception as e:
+            logger.error(f"Failed to update {self.model_class.__name__} {id}: {e}")
+            raise DatabaseError(f"Failed to update {self.model_class.__name__}") from e

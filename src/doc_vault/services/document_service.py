@@ -66,6 +66,12 @@ class DocumentService:
         self.agent_repo = AgentRepository(db_manager)
         self.org_repo = OrganizationRepository(db_manager)
 
+    def _ensure_uuid(self, value) -> UUID:
+        """Convert string UUID to UUID object if needed."""
+        if isinstance(value, str):
+            return UUID(value)
+        return value
+
     def _get_bucket_name(self, organization_id: UUID) -> str:
         """Generate bucket name for an organization."""
         return f"{self.bucket_prefix}-org-{str(organization_id)}"
@@ -76,20 +82,23 @@ class DocumentService:
         """Generate storage path for a document version."""
         return f"{document_id}/v{version_number}/{filename}"
 
-    async def _check_agent_exists(self, agent_id: UUID) -> None:
+    async def _check_agent_exists(self, agent_id: UUID | str) -> None:
         """Check if an agent exists."""
+        agent_id = self._ensure_uuid(agent_id)
         agent = await self.agent_repo.get_by_id(agent_id)
         if not agent:
             raise AgentNotFoundError(f"Agent {agent_id} not found")
 
-    async def _check_organization_exists(self, organization_id: UUID) -> None:
+    async def _check_organization_exists(self, organization_id: UUID | str) -> None:
         """Check if an organization exists."""
+        organization_id = self._ensure_uuid(organization_id)
         org = await self.org_repo.get_by_id(organization_id)
         if not org:
             raise OrganizationNotFoundError(f"Organization {organization_id} not found")
 
-    async def _check_document_exists(self, document_id: UUID) -> Document:
+    async def _check_document_exists(self, document_id: UUID | str) -> Document:
         """Check if a document exists and return it."""
+        document_id = self._ensure_uuid(document_id)
         document = await self.document_repo.get_by_id(document_id)
         if not document:
             raise DocumentNotFoundError(f"Document {document_id} not found")
@@ -98,9 +107,11 @@ class DocumentService:
         return document
 
     async def _check_permission(
-        self, document_id: UUID, agent_id: UUID, permission: str
+        self, document_id: UUID | str, agent_id: UUID | str, permission: str
     ) -> None:
         """Check if an agent has permission for a document."""
+        document_id = self._ensure_uuid(document_id)
+        agent_id = self._ensure_uuid(agent_id)
         has_permission = await self.acl_repo.check_permission(
             document_id, agent_id, permission
         )
@@ -121,8 +132,8 @@ class DocumentService:
         self,
         file_path: str,
         name: str,
-        organization_id: UUID,
-        agent_id: UUID,
+        organization_id: UUID | str,
+        agent_id: UUID | str,
         description: Optional[str] = None,
         tags: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -148,6 +159,10 @@ class DocumentService:
             OrganizationNotFoundError: If organization doesn't exist
             StorageError: If upload fails
         """
+        # Ensure UUIDs
+        organization_id = self._ensure_uuid(organization_id)
+        agent_id = self._ensure_uuid(agent_id)
+
         # Validate inputs
         if not os.path.exists(file_path):
             raise ValidationError(f"File does not exist: {file_path}")
@@ -243,8 +258,8 @@ class DocumentService:
 
     async def download_document(
         self,
-        document_id: UUID,
-        agent_id: UUID,
+        document_id: UUID | str,
+        agent_id: UUID | str,
         version: Optional[int] = None,
     ) -> bytes:
         """
@@ -263,6 +278,9 @@ class DocumentService:
             PermissionDeniedError: If agent lacks READ permission
             StorageError: If download fails
         """
+        # Ensure UUIDs
+        document_id = self._ensure_uuid(document_id)
+        agent_id = self._ensure_uuid(agent_id)
         # Check agent exists
         await self._check_agent_exists(agent_id)
 
@@ -303,8 +321,8 @@ class DocumentService:
 
     async def update_metadata(
         self,
-        document_id: UUID,
-        agent_id: UUID,
+        document_id: UUID | str,
+        agent_id: UUID | str,
         name: Optional[str] = None,
         description: Optional[str] = None,
         tags: Optional[List[str]] = None,
@@ -328,6 +346,10 @@ class DocumentService:
             DocumentNotFoundError: If document doesn't exist
             PermissionDeniedError: If agent lacks WRITE permission
         """
+        # Ensure UUIDs
+        document_id = self._ensure_uuid(document_id)
+        agent_id = self._ensure_uuid(agent_id)
+
         # Check agent exists
         await self._check_agent_exists(agent_id)
 
@@ -363,8 +385,8 @@ class DocumentService:
 
     async def delete_document(
         self,
-        document_id: UUID,
-        agent_id: UUID,
+        document_id: UUID | str,
+        agent_id: UUID | str,
         hard_delete: bool = False,
     ) -> None:
         """
@@ -379,6 +401,10 @@ class DocumentService:
             DocumentNotFoundError: If document doesn't exist
             PermissionDeniedError: If agent lacks DELETE permission
         """
+        # Ensure UUIDs
+        document_id = self._ensure_uuid(document_id)
+        agent_id = self._ensure_uuid(agent_id)
+
         # Check agent exists
         await self._check_agent_exists(agent_id)
 
@@ -405,7 +431,7 @@ class DocumentService:
                     logger.warning(f"Failed to delete {path} from storage: {e}")
 
             # Delete from database
-            await self.document_repo.delete(document_id)
+            await self.document_repo.hard_delete(document_id)
             logger.info(f"Document hard deleted: {document_id} by agent {agent_id}")
         else:
             # Soft delete: just mark as deleted
@@ -414,9 +440,9 @@ class DocumentService:
 
     async def replace_document(
         self,
-        document_id: UUID,
+        document_id: UUID | str,
         file_path: str,
-        agent_id: UUID,
+        agent_id: UUID | str,
         change_description: str,
     ) -> DocumentVersion:
         """
@@ -437,6 +463,10 @@ class DocumentService:
             ValidationError: If file doesn't exist
             StorageError: If upload fails
         """
+        # Ensure UUIDs
+        document_id = self._ensure_uuid(document_id)
+        agent_id = self._ensure_uuid(agent_id)
+
         # Validate file
         if not os.path.exists(file_path):
             raise ValidationError(f"File does not exist: {file_path}")
@@ -523,8 +553,8 @@ class DocumentService:
 
     async def list_documents(
         self,
-        organization_id: UUID,
-        agent_id: UUID,
+        organization_id: UUID | str,
+        agent_id: UUID | str,
         status: Optional[str] = None,
         tags: Optional[List[str]] = None,
         limit: int = 50,
@@ -548,6 +578,10 @@ class DocumentService:
             AgentNotFoundError: If agent doesn't exist
             OrganizationNotFoundError: If organization doesn't exist
         """
+        # Ensure UUIDs
+        organization_id = self._ensure_uuid(organization_id)
+        agent_id = self._ensure_uuid(agent_id)
+
         # Check agent and organization exist
         await self._check_agent_exists(agent_id)
         await self._check_organization_exists(organization_id)
@@ -579,8 +613,8 @@ class DocumentService:
     async def search_documents(
         self,
         query: str,
-        organization_id: UUID,
-        agent_id: UUID,
+        organization_id: UUID | str,
+        agent_id: UUID | str,
         limit: int = 20,
     ) -> List[Document]:
         """
@@ -599,6 +633,10 @@ class DocumentService:
             AgentNotFoundError: If agent doesn't exist
             OrganizationNotFoundError: If organization doesn't exist
         """
+        # Ensure UUIDs
+        organization_id = self._ensure_uuid(organization_id)
+        agent_id = self._ensure_uuid(agent_id)
+
         # Check agent and organization exist
         await self._check_agent_exists(agent_id)
         await self._check_organization_exists(organization_id)

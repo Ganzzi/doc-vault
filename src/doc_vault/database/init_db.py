@@ -53,34 +53,56 @@ async def initialize_database(config: Config) -> bool:
         with open(schema_path, "r", encoding="utf-8") as f:
             schema_sql = f.read()
 
-        # Split SQL into individual statements (basic approach)
-        # Note: This is a simple splitter that may not handle all edge cases
+        # Split SQL into individual statements
+        # Handle dollar-quoted strings ($$) used in PostgreSQL functions
         statements = []
         current_statement = []
         in_multiline_comment = False
+        in_dollar_quote = False
+        dollar_quote_tag = None
 
         for line in schema_sql.splitlines():
-            line = line.strip()
+            stripped_line = line.strip()
 
-            # Skip empty lines and single-line comments
-            if not line or line.startswith("--"):
+            # Skip empty lines and single-line comments (when not in dollar quote)
+            if not in_dollar_quote and (
+                not stripped_line or stripped_line.startswith("--")
+            ):
                 continue
 
-            # Handle multi-line comments (basic)
-            if "/*" in line:
-                in_multiline_comment = True
-            if "*/" in line:
-                in_multiline_comment = False
-                continue
-            if in_multiline_comment:
-                continue
+            # Handle multi-line comments (when not in dollar quote)
+            if not in_dollar_quote:
+                if "/*" in stripped_line:
+                    in_multiline_comment = True
+                if "*/" in stripped_line:
+                    in_multiline_comment = False
+                    continue
+                if in_multiline_comment:
+                    continue
+
+            # Check for dollar-quoted strings
+            # Look for $$ or $tag$
+            if "$$" in stripped_line or "$" in stripped_line:
+                # Simple detection: toggle on/off when we see $$
+                if "$$" in stripped_line:
+                    if not in_dollar_quote:
+                        in_dollar_quote = True
+                        dollar_quote_tag = "$$"
+                    elif stripped_line.count("$$") == 2:
+                        # Both opening and closing on same line
+                        in_dollar_quote = False
+                        dollar_quote_tag = None
+                    elif stripped_line.endswith("$$;") or "$$;" in stripped_line:
+                        # Closing dollar quote
+                        in_dollar_quote = False
+                        dollar_quote_tag = None
 
             # Accumulate statement lines
             current_statement.append(line)
 
-            # Check if statement ends
-            if line.endswith(";"):
-                statements.append(" ".join(current_statement))
+            # Check if statement ends (semicolon outside dollar quotes)
+            if not in_dollar_quote and stripped_line.endswith(";"):
+                statements.append("\n".join(current_statement))
                 current_statement = []
 
         # Execute each statement

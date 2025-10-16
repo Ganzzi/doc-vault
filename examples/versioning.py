@@ -209,14 +209,11 @@ async def main():
             )
             print("✅ Updated document metadata for restored version")
 
-            # Show document info with updated metadata
-            doc_info = await vault.get_document(
-                document_id=document.id, agent_id="author-001"
-            )
-            print(f"✅ Current document status: {doc_info.status}")
-            print(f"   Current version: {doc_info.current_version}")
-            if doc_info.metadata:
-                print(f"   Metadata: {doc_info.metadata}")
+            # Show document info with updated metadata (from the update_metadata call above)
+            print(f"✅ Current document status: {updated_doc.status}")
+            print(f"   Current version: {updated_doc.current_version}")
+            if updated_doc.metadata:
+                print(f"   Metadata: {updated_doc.metadata}")
 
             print("\n🎉 Versioning demonstration completed!")
             print("\nKey concepts demonstrated:")

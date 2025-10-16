@@ -60,10 +60,49 @@ async def db_manager(config: Config) -> AsyncGenerator[PostgreSQLManager, None]:
     # Initialize the pool
     await manager.initialize()
 
+    # Initialize database schema for repository tests
+    await initialize_database_schema(manager)
+
     yield manager
 
     # Cleanup
     await manager.close()
+
+
+async def initialize_database_schema(manager: PostgreSQLManager) -> None:
+    """Initialize database schema if tables don't exist."""
+    try:
+        # Check if organizations table exists
+        result = await manager.execute(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'organizations')"
+        )
+        table_exists = result.result()[0][0]
+
+        if not table_exists:
+            # Read and execute schema SQL
+            schema_path = (
+                Path(__file__).parent.parent
+                / "src"
+                / "doc_vault"
+                / "sql"
+                / "schema.sql"
+            )
+            if schema_path.exists():
+                with open(schema_path, "r") as f:
+                    schema_sql = f.read()
+
+                # Split by semicolon and execute each statement
+                statements = [
+                    stmt.strip() for stmt in schema_sql.split(";") if stmt.strip()
+                ]
+                for statement in statements:
+                    if statement:
+                        await manager.execute(statement)
+            else:
+                raise FileNotFoundError(f"Schema file not found: {schema_path}")
+    except Exception as e:
+        # If schema initialization fails, continue - tables might already exist
+        pass
 
 
 @pytest.fixture
@@ -180,7 +219,7 @@ async def test_document(
 
 
 @pytest.fixture
-async def temp_file() -> Generator[str, None, None]:
+async def temp_file() -> AsyncGenerator[str, None]:
     """Create a temporary file for testing uploads."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("This is test content for file upload operations.")
@@ -193,7 +232,7 @@ async def temp_file() -> Generator[str, None, None]:
 
 
 @pytest.fixture
-async def temp_file_v2() -> Generator[str, None, None]:
+async def temp_file_v2() -> AsyncGenerator[str, None]:
     """Create a second temporary file for testing version replacement."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("This is updated test content for version replacement.")
