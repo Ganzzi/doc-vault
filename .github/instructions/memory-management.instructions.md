@@ -47,9 +47,18 @@ Parameters:
 ```
 
 ### 3. **When Needing Library Documentation**
-- Check "Library References" memory first
-- Use context-bridge MCP to search for detailed docs (as noted in memory)
-- Example: For psqlpy questions, check local file first: `docs/psqlpy-complete-guide.md`
+- Check "Library References" memory first for known patterns
+- **Use context-bridge MCP tools to search for current documentation**
+- Only check local files as fallback if MCP search fails
+- Update memories with new findings from MCP searches
+
+**Search Strategy Priority:**
+1. Use `mcp_context-bridg_find_documents` to find relevant docs
+2. Use `mcp_context-bridg_search_content` for specific queries
+3. Update "Library References" memory with findings
+4. Check local files only as last resort
+
+Example: For psqlpy questions, use context-bridge MCP first: "psqlpy connection pool examples"
 
 ### 4. **When Encountering Bugs**
 - First check "Issues and Bugs" memory to see if it's known
@@ -124,8 +133,8 @@ sections=[
   {
     section_id="psqlpy_usage",
     action="insert",
-    old_content="**Search Strategy:**\n- Check local psqlpy-complete-guide.md first",
-    new_content="\n**Common Gotcha:**\n- Always use $1, $2 placeholders, NOT %s or ?\n- fetch() returns List[Dict], NOT List[Tuple]\n\n**Search Strategy:**\n- Check local psqlpy-complete-guide.md first"
+    old_content="**Search Strategy:**\n- Used context-bridge MCP: \"psqlpy connection pool examples\", \"psqlpy SSL configuration\"",
+    new_content="\n**New Pattern Discovered:**\n- ConnectionPool requires explicit SSL context configuration\n- Always use async context managers for connection lifecycle\n- Build DSN strings with proper SSL parameters\n\n**Search Strategy:**\n- Used context-bridge MCP: \"psqlpy connection pool examples\", \"psqlpy SSL configuration\""
   }
 ]
 ```

@@ -6,10 +6,10 @@ and repository classes for data access.
 """
 
 from . import repositories, schemas
-from .postgres_manager import PostgresManager
+from .postgres_manager import PostgreSQLManager
 
 __all__ = [
-    "PostgresManager",
+    "PostgreSQLManager",
     "repositories",
     "schemas",
 ]
