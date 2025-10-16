@@ -1,0 +1,338 @@
+[
+    {
+        "external_id": "doc_vault_dev",
+        "title": "Project Overview",
+        "template_content": {
+            "template": {
+                "id": "project_overview_v1",
+                "name": "Project Overview Template"
+            },
+            "sections": [
+                {
+                    "id": "purpose",
+                    "description": "Core purpose and goals of DocVault SDK"
+                },
+                {
+                    "id": "core_features",
+                    "description": "Essential features for v1.0 release"
+                },
+                {
+                    "id": "tech_stack",
+                    "description": "Main technologies and dependencies"
+                },
+                {
+                    "id": "timeline",
+                    "description": "Development phases and milestones"
+                }
+            ]
+        },
+        "initial_sections": {
+            "purpose": {
+                "content": "DocVault is a scalable Python SDK for document management and collaboration across organizations and AI agents. It provides APIs for drafting, reviewing, editing, and sharing documents in a company-like environment.\n\n**Key Goals:**\n- Multi-organization support with strong isolation\n- Role-based access control (RBAC)\n- Version control for all documents\n- Binary storage (PDF, images, exports)\n- Agent-to-agent document sharing",
+                "update_count": 0
+            },
+            "core_features": {
+                "content": "**Phase 1 (v1.0) Features:**\n- Document upload/download/delete\n- Metadata management\n- Role-based permissions (READ, WRITE, DELETE, SHARE, ADMIN)\n- Version control and history\n- Multi-organization isolation (bucket-per-org)\n- Agent registration and management\n- Full-text search\n\n**Future (Phase 2):**\n- PDF processing (annotate, merge, split)\n- Semantic search\n- Real-time collaboration\n- Document workflows\n- Audit logs",
+                "update_count": 0
+            },
+            "tech_stack": {
+                "content": "**Core:**\n- Python 3.10+\n- psqlpy (PostgreSQL async driver, Rust-based)\n- Pydantic v2 (data validation)\n- MinIO/S3 (binary storage)\n\n**Database:**\n- PostgreSQL 14+ with pgvector (future)\n\n**Dev Tools:**\n- pytest + pytest-asyncio\n- black, ruff, mypy\n- Docker Compose",
+                "update_count": 0
+            },
+            "timeline": {
+                "content": "**Total: 20 days for v1.0**\n\n- Phase 1: Foundation (Days 1-2)\n- Phase 2: Database Layer (Days 3-5)\n- Phase 3: Repository Layer (Days 6-8)\n- Phase 4: Storage Layer (Days 9-10)\n- Phase 5: Service Layer (Days 11-14)\n- Phase 6: SDK API (Days 15-16)\n- Phase 7: Documentation (Days 17-18)\n- Phase 8: Testing & Polish (Days 19-20)\n\n**Current Date:** October 15, 2025",
+                "update_count": 0
+            }
+        }
+    },
+    {
+        "external_id": "doc_vault_dev",
+        "title": "Architecture Design",
+        "template_content": {
+            "template": {
+                "id": "architecture_v1",
+                "name": "Architecture Design Template"
+            },
+            "sections": [
+                {
+                    "id": "layers",
+                    "description": "Three-layer architecture breakdown"
+                },
+                {
+                    "id": "component_responsibilities",
+                    "description": "What each component does"
+                },
+                {
+                    "id": "design_patterns",
+                    "description": "Key patterns and conventions used"
+                },
+                {
+                    "id": "storage_strategy",
+                    "description": "MinIO/S3 bucket and path structure"
+                }
+            ]
+        },
+        "initial_sections": {
+            "layers": {
+                "content": "**1. SDK API Layer (core.py)**\n- High-level user interface\n- Context manager support\n- DocVaultSDK class\n\n**2. Service Layer (services/)**\n- DocumentService: upload, download, update, delete\n- AccessService: permissions, sharing\n- VersionService: versioning, restore\n\n**3. Repository Layer (database/repositories/)**\n- OrganizationRepository\n- AgentRepository\n- DocumentRepository\n- VersionRepository\n- ACLRepository\n\n**4. Storage Layer (storage/)**\n- Abstract StorageBackend interface\n- S3StorageBackend implementation",
+                "update_count": 0
+            },
+            "component_responsibilities": {
+                "content": "**SDK Layer:**\n- Initialize services\n- Provide clean API\n- Manage lifecycle\n\n**Service Layer:**\n- Orchestrate repositories + storage\n- Enforce business rules\n- Handle transactions\n\n**Repository Layer:**\n- Execute SQL with psqlpy\n- Convert rows to Pydantic models\n- CRUD operations\n\n**Storage Layer:**\n- Upload/download from S3/MinIO\n- Manage buckets\n- Generate presigned URLs",
+                "update_count": 0
+            },
+            "design_patterns": {
+                "content": "**Repository Pattern:**\n- Separate data access from business logic\n- Base repository with common methods\n- Easy to test and mock\n\n**Service Orchestration:**\n- Services coordinate multiple repos\n- Transaction boundaries at service level\n\n**Async-first:**\n- All SDK methods are async\n- Use async/await throughout\n\n**External ID Pattern:**\n- Organizations and agents use external_id\n- Integrate with existing auth systems",
+                "update_count": 0
+            },
+            "storage_strategy": {
+                "content": "**Bucket Naming:**\n`doc-vault-org-{organization_id}`\n\n**Object Path:**\n`{document_id}/v{version_number}/{filename}`\n\nExample:\n- `abc-123/v1/report.pdf` (first version)\n- `abc-123/v2/report.pdf` (updated)\n- `abc-123/v3/report.pdf` (current)\n\n**Benefits:**\n- Strong org isolation\n- All versions grouped by document\n- Easy to list/restore versions",
+                "update_count": 0
+            }
+        }
+    },
+    {
+        "external_id": "doc_vault_dev",
+        "title": "Database Design",
+        "template_content": {
+            "template": {
+                "id": "database_v1",
+                "name": "Database Design Template"
+            },
+            "sections": [
+                {
+                    "id": "tables",
+                    "description": "Core tables and their purposes"
+                },
+                {
+                    "id": "relationships",
+                    "description": "Foreign key relationships between tables"
+                },
+                {
+                    "id": "indexes",
+                    "description": "Important indexes for performance"
+                },
+                {
+                    "id": "triggers",
+                    "description": "Database triggers for automation"
+                }
+            ]
+        },
+        "initial_sections": {
+            "tables": {
+                "content": "**organizations:** Track companies/teams\n- id (UUID PK), external_id (unique), name, metadata, timestamps\n\n**agents:** Users (humans or AI) within organizations\n- id (UUID PK), external_id (unique), organization_id (FK), name, email, agent_type, is_active\n\n**documents:** Core document metadata\n- id (UUID PK), organization_id (FK), name, filename, file_size, mime_type, storage_path, current_version, status, created_by (FK), tags[], search_vector\n\n**document_versions:** Version history\n- id (UUID PK), document_id (FK), version_number, filename, file_size, storage_path, change_description, created_by (FK)\n\n**document_acl:** Access control\n- id (UUID PK), document_id (FK), agent_id (FK), permission, granted_by (FK), expires_at\n\n**Permissions:** READ, WRITE, DELETE, SHARE, ADMIN",
+                "update_count": 0
+            },
+            "relationships": {
+                "content": "```\norganizations 1──────* agents\n      │                   │\n      1                   *\n      │                   │\n   documents *─────────* document_acl\n      │\n      1\n      │\n      *\ndocument_versions\n```\n\n**Key Relationships:**\n- Organization → Agents (1:many)\n- Organization → Documents (1:many)\n- Agent → Documents created (1:many)\n- Document → Versions (1:many)\n- Document ↔ Agents (many:many via ACL)",
+                "update_count": 0
+            },
+            "indexes": {
+                "content": "**Performance indexes:**\n- organizations: external_id, created_at\n- agents: external_id, organization_id, agent_type, is_active\n- documents: organization_id, created_by, status, created_at, tags (GIN)\n- document_versions: document_id, (document_id, version_number)\n- document_acl: document_id, agent_id, permission\n\n**Full-text search:**\n- documents.search_vector (GIN index)\n- documents.name (GIN with to_tsvector)",
+                "update_count": 0
+            },
+            "triggers": {
+                "content": "**update_updated_at_column():**\n- Auto-update updated_at on organizations, agents, documents\n\n**update_document_search_vector():**\n- Auto-update search_vector on documents\n- Combines name (weight A) + description (weight B)\n- Uses 'english' language config\n\n**Applied to:**\n- BEFORE INSERT OR UPDATE on documents",
+                "update_count": 0
+            }
+        }
+    },
+    {
+        "external_id": "doc_vault_dev",
+        "title": "API Design",
+        "template_content": {
+            "template": {
+                "id": "api_design_v1",
+                "name": "API Design Template"
+            },
+            "sections": [
+                {
+                    "id": "initialization",
+                    "description": "How to initialize DocVaultSDK"
+                },
+                {
+                    "id": "document_operations",
+                    "description": "Key document methods and signatures"
+                },
+                {
+                    "id": "access_control",
+                    "description": "Permission and sharing methods"
+                },
+                {
+                    "id": "version_management",
+                    "description": "Versioning methods"
+                }
+            ]
+        },
+        "initial_sections": {
+            "initialization": {
+                "content": "```python\nfrom doc_vault import DocVaultSDK\n\n# From .env file\nasync with DocVaultSDK() as vault:\n    pass\n\n# Explicit config\nfrom doc_vault.config import Config\nconfig = Config(\n    postgres_host=\"localhost\",\n    postgres_port=5432,\n    postgres_user=\"postgres\",\n    postgres_password=\"password\",\n    postgres_db=\"doc_vault\",\n    minio_endpoint=\"localhost:9000\",\n    minio_access_key=\"minioadmin\",\n    minio_secret_key=\"minioadmin\"\n)\nasync with DocVaultSDK(config=config) as vault:\n    pass\n```",
+                "update_count": 0
+            },
+            "document_operations": {
+                "content": "**upload(file_path, name, organization_id, agent_id, description=None, tags=[], metadata={}) → Document**\n\n**download(document_id, agent_id, version=None) → bytes**\n\n**update_metadata(document_id, agent_id, name=None, description=None, tags=None, metadata=None) → Document**\n\n**replace(document_id, file_path, agent_id, change_description) → DocumentVersion**\n\n**delete(document_id, agent_id, hard_delete=False) → None**\n\n**list_documents(organization_id, agent_id, status=None, tags=None, limit=50, offset=0) → List[Document]**\n\n**search(query, organization_id, agent_id, limit=20) → List[Document]**",
+                "update_count": 0
+            },
+            "access_control": {
+                "content": "**share(document_id, agent_id, permission, granted_by, expires_at=None) → None**\n- Permissions: READ, WRITE, DELETE, SHARE, ADMIN\n\n**revoke(document_id, agent_id, permission, revoked_by) → None**\n\n**check_permission(document_id, agent_id, permission) → bool**\n\n**list_accessible_documents(agent_id, organization_id, permission=None) → List[Document]**\n\n**get_document_permissions(document_id, agent_id) → List[ACL]**\n- Requires ADMIN permission",
+                "update_count": 0
+            },
+            "version_management": {
+                "content": "**get_versions(document_id, agent_id) → List[DocumentVersion]**\n\n**download(document_id, agent_id, version=2) → bytes**\n- Pass version number to download specific version\n\n**restore_version(document_id, version_number, agent_id, change_description) → DocumentVersion**\n- Creates new version from old one\n\n**get_version_info(document_id, version_number, agent_id) → DocumentVersion**",
+                "update_count": 0
+            }
+        }
+    },
+    {
+        "external_id": "doc_vault_dev",
+        "title": "Configuration",
+        "template_content": {
+            "template": {
+                "id": "configuration_v1",
+                "name": "Configuration Template"
+            },
+            "sections": [
+                {
+                    "id": "environment_variables",
+                    "description": "Required and optional env vars"
+                },
+                {
+                    "id": "dependencies",
+                    "description": "Python packages and versions"
+                },
+                {
+                    "id": "setup_steps",
+                    "description": "Steps to set up development environment"
+                }
+            ]
+        },
+        "initial_sections": {
+            "environment_variables": {
+                "content": "**PostgreSQL:**\n- POSTGRES_HOST (default: localhost)\n- POSTGRES_PORT (default: 5432)\n- POSTGRES_USER (required)\n- POSTGRES_PASSWORD (required)\n- POSTGRES_DB (required)\n\n**MinIO/S3:**\n- MINIO_ENDPOINT (required, e.g., localhost:9000)\n- MINIO_ACCESS_KEY (required)\n- MINIO_SECRET_KEY (required)\n- MINIO_SECURE (default: false)\n\n**DocVault:**\n- BUCKET_PREFIX (default: doc-vault)\n- LOG_LEVEL (default: INFO)",
+                "update_count": 0
+            },
+            "dependencies": {
+                "content": "**Core:**\n- psqlpy (latest) - PostgreSQL async driver\n- pydantic ^2.0 - Data validation\n- pydantic-settings ^2.0 - Config management\n- minio (latest) - S3/MinIO client\n- python-dotenv (latest) - .env support\n\n**Dev:**\n- pytest ^7.0\n- pytest-asyncio ^0.21\n- pytest-cov ^4.0\n- black ^23.0\n- ruff ^0.1\n- mypy ^1.0\n\n**Requirements:**\n- Python 3.10+\n- PostgreSQL 14+\n- MinIO or AWS S3",
+                "update_count": 0
+            },
+            "setup_steps": {
+                "content": "1. Install Poetry: `pip install poetry`\n2. Clone repo and cd into directory\n3. Install dependencies: `poetry install`\n4. Copy .env.example to .env\n5. Configure environment variables\n6. Start PostgreSQL and MinIO (Docker or local)\n7. Initialize database: `poetry run python -m doc_vault.database.init_db`\n8. Run tests: `poetry run pytest`",
+                "update_count": 0
+            }
+        }
+    },
+    {
+        "external_id": "doc_vault_dev",
+        "title": "Development Status",
+        "template_content": {
+            "template": {
+                "id": "dev_status_v1",
+                "name": "Development Status Template"
+            },
+            "sections": [
+                {
+                    "id": "current_phase",
+                    "description": "Current implementation phase"
+                },
+                {
+                    "id": "completed_tasks",
+                    "description": "Tasks completed so far"
+                },
+                {
+                    "id": "next_steps",
+                    "description": "Immediate next tasks"
+                },
+                {
+                    "id": "blockers",
+                    "description": "Current blockers or challenges"
+                }
+            ]
+        },
+        "initial_sections": {
+            "current_phase": {
+                "content": "**Phase: Pre-Implementation**\n\nSetting up memory system and preparing for Phase 1 (Foundation).\n\n**Target:** Begin Phase 1 - project structure and configuration",
+                "update_count": 0
+            },
+            "completed_tasks": {
+                "content": "- ✓ Created implementation plan\n- ✓ Set up memory structure\n- ✓ Defined architecture\n\n**Next milestone:** Phase 1 completion (Days 1-2)",
+                "update_count": 0
+            },
+            "next_steps": {
+                "content": "**Immediate (Phase 1):**\n1. Create directory structure\n2. Configure pyproject.toml\n3. Create .env.example and .gitignore\n4. Build exceptions.py\n5. Build config.py with pydantic-settings\n6. Create all __init__.py files\n\n**After Phase 1:**\n- Begin Phase 2: Database layer with psqlpy",
+                "update_count": 0
+            },
+            "blockers": {
+                "content": "No current blockers.\n\n(This section will be updated as development progresses)",
+                "update_count": 0
+            }
+        }
+    },
+    {
+        "external_id": "doc_vault_dev",
+        "title": "Library References",
+        "template_content": {
+            "template": {
+                "id": "library_ref_v1",
+                "name": "Library References Template"
+            },
+            "sections": [
+                {
+                    "id": "psqlpy_usage",
+                    "description": "How to use psqlpy and where to find info"
+                },
+                {
+                    "id": "minio_usage",
+                    "description": "How to use MinIO client and find docs"
+                },
+                {
+                    "id": "pydantic_usage",
+                    "description": "Pydantic patterns for schemas and config"
+                },
+                {
+                    "id": "testing_tools",
+                    "description": "pytest and testing utilities"
+                }
+            ]
+        },
+        "initial_sections": {
+            "psqlpy_usage": {
+                "content": "**Local Reference:** `docs/psqlpy-complete-guide.md`\n\n**Key Patterns:**\n- Use ConnectionPool with async context manager\n- Parameterized queries: `SELECT * FROM table WHERE id = $1`\n- fetch() returns List[Dict[str, Any]]\n- execute() for INSERT/UPDATE/DELETE\n- Use transactions for multi-step operations\n\n**Search Strategy:**\n- Check local psqlpy-complete-guide.md first\n- Use context-bridge MCP to search psqlpy documentation\n- Query: \"psqlpy connection pool usage\", \"psqlpy transactions\", etc.",
+                "update_count": 0
+            },
+            "minio_usage": {
+                "content": "**Package:** `minio` (Python client)\n\n**Key Operations:**\n- Minio(endpoint, access_key, secret_key, secure=False)\n- bucket_exists(), make_bucket()\n- put_object(bucket, object_name, data, length, content_type)\n- get_object(bucket, object_name) → response\n- remove_object(bucket, object_name)\n- presigned_get_object(bucket, object_name, expires)\n\n**Search Strategy:**\n- Use context-bridge MCP: \"minio python client examples\"\n- Official docs: docs.min.io/docs/python-client-api-reference",
+                "update_count": 0
+            },
+            "pydantic_usage": {
+                "content": "**Schemas (v2):**\n- Use `BaseModel` for data models\n- `Field()` for validation and metadata\n- `ConfigDict` for model configuration\n- UUID fields: `id: UUID = Field(default_factory=uuid4)`\n\n**Settings:**\n- Use `BaseSettings` for configuration\n- `SettingsConfigDict(env_file='.env')`\n- Auto-load from environment variables\n\n**Search Strategy:**\n- Use context-bridge MCP: \"pydantic v2 BaseSettings\", \"pydantic validation examples\"",
+                "update_count": 0
+            },
+            "testing_tools": {
+                "content": "**pytest:**\n- Use `pytest.mark.asyncio` for async tests\n- Fixtures in conftest.py\n- `pytest.fixture(scope='session')` for DB setup\n\n**pytest-asyncio:**\n- Enable async test functions\n- `async def test_something()`\n\n**pytest-cov:**\n- Coverage reports: `pytest --cov=doc_vault`\n\n**Mocking:**\n- Use `unittest.mock` or `pytest-mock`\n- Mock repositories in service tests\n- Mock storage in service tests",
+                "update_count": 0
+            }
+        }
+    },
+    {
+        "external_id": "doc_vault_dev",
+        "title": "Issues and Bugs",
+        "template_content": {
+            "template": {
+                "id": "issues_bugs_v1",
+                "name": "Issues and Bugs Template"
+            },
+            "sections": [
+                {
+                    "id": "template_for_new_issues",
+                    "description": "Template structure for reporting new issues"
+                }
+            ]
+        },
+        "initial_sections": {
+            "template_for_new_issues": {
+                "content": "**When adding new issue, create a section with this format:**\n\n**Section ID:** `issue_{number}_{short_name}`\n\nExample: `issue_001_psqlpy_connection_error`\n\n**Content Structure:**\n```\n**Issue #001: [Title]**\n**Status:** Open/In Progress/Resolved\n**Severity:** Critical/High/Medium/Low\n**Date Found:** YYYY-MM-DD\n**Component:** [Layer/File]\n\n**Description:**\n[What's the problem?]\n\n**Steps to Reproduce:**\n1. ...\n2. ...\n\n**Expected Behavior:**\n[What should happen]\n\n**Actual Behavior:**\n[What actually happens]\n\n**Error Message:**\n```\n[Error details]\n```\n\n**Root Cause:**\n[Analysis of why it happens]\n\n**Solution:**\n[How to fix it]\n\n**Related Files:**\n- file1.py:line_number\n- file2.py:line_number\n```\n\n**No issues found yet - this memory will be populated during development**",
+                "update_count": 0
+            }
+        }
+    }
+]

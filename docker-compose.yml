@@ -1,0 +1,56 @@
+services:
+  # PostgreSQL Database with pgvector extension for vector storage
+  postgres:
+    image: tensorchord/vchord-suite:pg16-latest
+    container_name: doc_vault_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-doc_vault}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/doc_vault/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-doc_vault}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - doc_vault_network
+
+  # MinIO Object Storage for binary files
+  minio:
+    image: minio/minio:latest
+    container_name: doc_vault_minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_REGION_NAME: ${MINIO_REGION:-us-east-1}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - doc_vault_network
+
+volumes:
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  doc_vault_network:
+    driver: bridge
