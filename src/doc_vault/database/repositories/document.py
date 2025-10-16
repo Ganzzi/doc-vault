@@ -93,6 +93,125 @@ class DocumentRepository(BaseRepository[Document]):
 
         return data
 
+    async def get_by_id(self, id: UUID) -> Optional[Document]:
+        """
+        Get a document by its UUID.
+        Override base implementation to exclude search_vector column.
+
+        Args:
+            id: Document UUID
+
+        Returns:
+            Document instance or None if not found
+        """
+        try:
+            # Exclude search_vector column to avoid tsvector conversion issues
+            columns = [
+                "id",
+                "organization_id",
+                "name",
+                "description",
+                "filename",
+                "file_size",
+                "mime_type",
+                "storage_path",
+                "current_version",
+                "status",
+                "created_by",
+                "updated_by",
+                "metadata",
+                "tags",
+                "created_at",
+                "updated_at",
+            ]
+            query = f"SELECT {', '.join(columns)} FROM {self.table_name} WHERE id = $1"
+            result = await self.db_manager.execute(query, [id])
+
+            rows = result.result()
+            if not rows:
+                return None
+
+            return self._row_to_model(rows[0])
+
+        except Exception as e:
+            logger.error(f"Failed to get Document by id {id}: {e}")
+            from doc_vault.exceptions import DatabaseError
+
+            raise DatabaseError(f"Failed to get Document") from e
+
+    async def update(self, id: UUID, updates: Dict[str, Any]) -> Optional[Document]:
+        """
+        Update a document by ID.
+        Override base implementation to exclude search_vector column.
+
+        Args:
+            id: Document UUID
+            updates: Dict of field updates
+
+        Returns:
+            Updated Document instance or None if not found
+        """
+        try:
+            if not updates:
+                # No updates provided, just return current record
+                return await self.get_by_id(id)
+
+            # Build SET clause
+            set_parts = []
+            values = []
+            param_index = 1
+
+            for key, value in updates.items():
+                set_parts.append(f"{key} = ${param_index}")
+                values.append(value)
+                param_index += 1
+
+            # Add ID parameter
+            values.append(id)
+
+            # Exclude search_vector column to avoid tsvector conversion issues
+            columns = [
+                "id",
+                "organization_id",
+                "name",
+                "description",
+                "filename",
+                "file_size",
+                "mime_type",
+                "storage_path",
+                "current_version",
+                "status",
+                "created_by",
+                "updated_by",
+                "metadata",
+                "tags",
+                "created_at",
+                "updated_at",
+            ]
+
+            query = f"""
+                UPDATE {self.table_name}
+                SET {', '.join(set_parts)}, updated_at = NOW()
+                WHERE id = ${param_index}
+                RETURNING {', '.join(columns)}
+            """
+
+            logger.debug(f"Updating Document {id}: {query}")
+
+            result = await self.db_manager.execute(query, values)
+            rows = result.result()
+
+            if not rows:
+                return None
+
+            return self._row_to_model(rows[0])
+
+        except Exception as e:
+            logger.error(f"Failed to update Document {id}: {e}")
+            from doc_vault.exceptions import DatabaseError
+
+            raise DatabaseError(f"Failed to update Document") from e
+
     async def get_by_organization(
         self,
         organization_id: UUID,
@@ -113,11 +232,30 @@ class DocumentRepository(BaseRepository[Document]):
             List of Document instances
         """
         try:
-            query = """
-                SELECT * FROM documents
+            # Exclude search_vector column to avoid tsvector conversion issues
+            columns = [
+                "id",
+                "organization_id",
+                "name",
+                "description",
+                "filename",
+                "file_size",
+                "mime_type",
+                "storage_path",
+                "current_version",
+                "status",
+                "created_by",
+                "updated_by",
+                "metadata",
+                "tags",
+                "created_at",
+                "updated_at",
+            ]
+            query = f"""
+                SELECT {', '.join(columns)} FROM documents
                 WHERE organization_id = $1
             """
-            params = [str(organization_id)]
+            params = [organization_id]
             param_index = 2
 
             if status:
@@ -200,8 +338,27 @@ class DocumentRepository(BaseRepository[Document]):
             List of Document instances
         """
         try:
-            query = """
-                SELECT * FROM documents
+            # Exclude search_vector column to avoid tsvector conversion issues
+            columns = [
+                "id",
+                "organization_id",
+                "name",
+                "description",
+                "filename",
+                "file_size",
+                "mime_type",
+                "storage_path",
+                "current_version",
+                "status",
+                "created_by",
+                "updated_by",
+                "metadata",
+                "tags",
+                "created_at",
+                "updated_at",
+            ]
+            query = f"""
+                SELECT {', '.join(columns)} FROM documents
                 WHERE organization_id = $1
                   AND name ILIKE $2
                   AND status = 'active'
@@ -209,7 +366,7 @@ class DocumentRepository(BaseRepository[Document]):
                 LIMIT $3
             """
             result = await self.db_manager.execute(
-                query, [str(organization_id), f"%{name_query}%", limit]
+                query, [organization_id, f"%{name_query}%", limit]
             )
             rows = result.result()
             return [self._row_to_model(row) for row in rows]
@@ -272,7 +429,7 @@ class DocumentRepository(BaseRepository[Document]):
             Updated Document instance or None if not found
         """
         try:
-            updates = {"status": status, "updated_by": str(updated_by)}
+            updates = {"status": status, "updated_by": updated_by}
             return await self.update(document_id, updates)
 
         except Exception as e:
@@ -334,14 +491,11 @@ class DocumentRepository(BaseRepository[Document]):
             # Handle optional ID
             if create_data.id is None:
                 data.pop("id", None)  # Remove None ID so database generates it
-            else:
-                data["id"] = str(create_data.id)  # Convert UUID to string
-
-            # Convert UUIDs to strings for psqlpy
-            data["organization_id"] = str(create_data.organization_id)
-            data["created_by"] = str(create_data.created_by)
-            if create_data.updated_by:
-                data["updated_by"] = str(create_data.updated_by)
+            # Keep UUIDs as UUID objects for psqlpy
+            # data["organization_id"] = str(create_data.organization_id)
+            # data["created_by"] = str(create_data.created_by)
+            # if create_data.updated_by:
+            #     data["updated_by"] = str(create_data.updated_by)
 
             # Build column names and placeholders for insert
             columns = list(data.keys())
@@ -351,7 +505,9 @@ class DocumentRepository(BaseRepository[Document]):
             query = f"""
                 INSERT INTO {self.table_name} ({', '.join(columns)})
                 VALUES ({', '.join(placeholders)})
-                RETURNING *
+                RETURNING id, organization_id, name, description, filename, file_size, 
+                         mime_type, storage_path, current_version, status, created_by, 
+                         updated_by, metadata, tags, created_at, updated_at
             """
 
             logger.debug(f"Creating document: {query}")

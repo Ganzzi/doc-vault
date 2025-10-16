@@ -68,7 +68,7 @@ class VersionRepository(BaseRepository[DocumentVersion]):
             Dict suitable for database insertion/update
         """
         data = {
-            "document_id": str(model.document_id),
+            "document_id": model.document_id,
             "version_number": model.version_number,
             "filename": model.filename,
             "file_size": model.file_size,
@@ -76,13 +76,13 @@ class VersionRepository(BaseRepository[DocumentVersion]):
             "mime_type": model.mime_type,
             "change_description": model.change_description,
             "change_type": model.change_type,
-            "created_by": str(model.created_by),
+            "created_by": model.created_by,
             "metadata": model.metadata,
         }
 
         # Include ID if it exists (for updates)
         if hasattr(model, "id") and model.id:
-            data["id"] = str(model.id)
+            data["id"] = model.id
 
         return data
 
@@ -98,18 +98,16 @@ class VersionRepository(BaseRepository[DocumentVersion]):
             offset: Number of versions to skip
 
         Returns:
-            List of DocumentVersion instances ordered by version_number DESC
+            List of DocumentVersion instances ordered by version_number ASC
         """
         try:
             query = """
                 SELECT * FROM document_versions
                 WHERE document_id = $1
-                ORDER BY version_number DESC
+                ORDER BY version_number ASC
                 LIMIT $2 OFFSET $3
             """
-            result = await self.db_manager.execute(
-                query, [str(document_id), limit, offset]
-            )
+            result = await self.db_manager.execute(query, [document_id, limit, offset])
             rows = result.result()
             return [self._row_to_model(row) for row in rows]
 
@@ -137,9 +135,7 @@ class VersionRepository(BaseRepository[DocumentVersion]):
                 SELECT * FROM document_versions
                 WHERE document_id = $1 AND version_number = $2
             """
-            result = await self.db_manager.execute(
-                query, [str(document_id), version_number]
-            )
+            result = await self.db_manager.execute(query, [document_id, version_number])
             rows = result.result()
             if not rows:
                 return None
@@ -170,7 +166,7 @@ class VersionRepository(BaseRepository[DocumentVersion]):
                 ORDER BY version_number DESC
                 LIMIT 1
             """
-            result = await self.db_manager.execute(query, [str(document_id)])
+            result = await self.db_manager.execute(query, [document_id])
             rows = result.result()
             if not rows:
                 return None
@@ -199,7 +195,7 @@ class VersionRepository(BaseRepository[DocumentVersion]):
                 SELECT COUNT(*) as count FROM document_versions
                 WHERE document_id = $1
             """
-            result = await self.db_manager.execute(query, [str(document_id)])
+            result = await self.db_manager.execute(query, [document_id])
             return result.result()[0]["count"]
 
         except Exception as e:
@@ -327,6 +323,10 @@ class VersionRepository(BaseRepository[DocumentVersion]):
         """
         # Convert create schema to dict and create model
         model_data = create_data.model_dump()
+        # Add created_at timestamp
+        from datetime import datetime
+
+        model_data["created_at"] = datetime.now()
         # Create a temporary model instance for the base class create method
         temp_model = DocumentVersion(**model_data)
         return await self.create(temp_model)

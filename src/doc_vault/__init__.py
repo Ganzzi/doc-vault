@@ -7,6 +7,13 @@ version control, and access control across multiple organizations.
 
 from .config import Config
 from .core import DocVaultSDK
+from .database.schemas import (
+    Agent,
+    Document,
+    DocumentACL,
+    DocumentVersion,
+    Organization,
+)
 from .exceptions import (
     AccessControlError,
     AgentNotFoundError,
@@ -40,6 +47,12 @@ __all__ = [
     # Main classes
     "DocVaultSDK",
     "Config",
+    # Schema classes
+    "Organization",
+    "Agent",
+    "Document",
+    "DocumentVersion",
+    "DocumentACL",
     # Exceptions
     "DocVaultError",
     "ConfigurationError",

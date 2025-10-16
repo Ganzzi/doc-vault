@@ -195,7 +195,7 @@ class BaseRepository(ABC, Generic[T]):
                 param_index += 1
 
             # Add ID parameter
-            values.append(str(id))
+            values.append(id)
 
             query = f"""
                 UPDATE {self.table_name}

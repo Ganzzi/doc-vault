@@ -8,7 +8,7 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 -- Organizations Table
 CREATE TABLE organizations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     external_id VARCHAR(255) UNIQUE NOT NULL, -- ID from external system
     name VARCHAR(255) NOT NULL,
     metadata JSONB DEFAULT '{}',
@@ -22,7 +22,7 @@ CREATE INDEX idx_organizations_created_at ON organizations (created_at);
 
 -- Agents Table
 CREATE TABLE agents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     external_id VARCHAR(255) UNIQUE NOT NULL, -- ID from external system
     organization_id UUID NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -145,7 +145,7 @@ WHERE
 
 -- Document Tags Table
 CREATE TABLE document_tags (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES documents (id) ON DELETE CASCADE,
     tag VARCHAR(100) NOT NULL,
     created_by UUID REFERENCES agents (id),

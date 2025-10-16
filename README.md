@@ -60,6 +60,27 @@ async def main():
 asyncio.run(main())
 ```
 
+### Try the Examples
+
+Get started quickly with our comprehensive examples:
+
+```bash
+# Clone and setup
+git clone https://github.com/docvault/doc-vault.git
+cd doc-vault
+
+# Install dependencies
+uv sync
+
+# Start services
+docker-compose up -d
+
+# Run basic usage example
+uv run python examples/basic_usage.py
+```
+
+See [Examples](./examples/) for detailed usage patterns including access control, versioning, and multi-organization scenarios.
+
 ## 📋 Requirements
 
 - **Python**: 3.10+
@@ -266,6 +287,31 @@ agent = await vault.register_agent(
     agent_type="human"  # or "ai", "service"
 )
 ```
+
+## 💡 Examples
+
+DocVault includes comprehensive examples demonstrating real-world usage patterns:
+
+### Core Functionality
+- **[Basic Usage](./examples/basic_usage.py)** - Complete end-to-end workflow
+- **[Access Control](./examples/access_control.py)** - Permission management and sharing
+- **[Versioning](./examples/versioning.py)** - Document version control
+- **[Multi-Organization](./examples/multi_org.py)** - Cross-organization collaboration
+
+### Running Examples
+
+```bash
+# Install in development mode
+pip install -e .
+
+# Start required services
+docker-compose up -d
+
+# Run any example
+python examples/basic_usage.py
+```
+
+Each example includes detailed comments explaining the concepts and expected output.
 
 ## 🛠️ Development
 

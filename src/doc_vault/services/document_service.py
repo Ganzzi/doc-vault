@@ -351,7 +351,7 @@ class DocumentService:
             existing_metadata.update(metadata)
             updates["metadata"] = existing_metadata
 
-        updates["updated_by"] = str(agent_id)
+        updates["updated_by"] = agent_id
 
         # Update document
         updated_doc = await self.document_repo.update(document_id, updates)
@@ -495,7 +495,7 @@ class DocumentService:
                     "file_size": file_size,
                     "mime_type": mime_type,
                     "storage_path": new_storage_path,
-                    "updated_by": str(agent_id),
+                    "updated_by": agent_id,
                 }
                 await self.document_repo.update(document_id, doc_updates)
 

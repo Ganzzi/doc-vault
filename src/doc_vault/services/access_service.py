@@ -341,7 +341,13 @@ class AccessService:
         await self._check_document_exists(document_id)
 
         # Check that requester has ADMIN permission
-        await self._check_permission(document_id, agent_id, "ADMIN")
+        has_permission = await self.acl_repo.check_permission(
+            document_id, agent_id, "ADMIN"
+        )
+        if not has_permission:
+            raise PermissionDeniedError(
+                f"Agent {agent_id} does not have ADMIN permission for document {document_id}"
+            )
 
         # Get all permissions for the document
         permissions = await self.acl_repo.get_by_document(document_id)

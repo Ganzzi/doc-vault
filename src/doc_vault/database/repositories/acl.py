@@ -64,16 +64,17 @@ class ACLRepository(BaseRepository[DocumentACL]):
             Dict suitable for database insertion/update
         """
         data = {
-            "document_id": str(model.document_id),
-            "agent_id": str(model.agent_id),
+            "document_id": model.document_id,
+            "agent_id": model.agent_id,
             "permission": model.permission,
-            "granted_by": str(model.granted_by),
-            "expires_at": model.expires_at.isoformat() if model.expires_at else None,
+            "granted_by": model.granted_by,
+            "granted_at": model.granted_at,
+            "expires_at": model.expires_at,
         }
 
         # Include ID if it exists (for updates)
         if hasattr(model, "id") and model.id:
-            data["id"] = str(model.id)
+            data["id"] = model.id
 
         return data
 
@@ -93,7 +94,7 @@ class ACLRepository(BaseRepository[DocumentACL]):
                 WHERE document_id = $1
                 ORDER BY granted_at DESC
             """
-            result = await self.db_manager.execute(query, [str(document_id)])
+            result = await self.db_manager.execute(query, [document_id])
             rows = result.result()
             return [self._row_to_model(row) for row in rows]
 
@@ -119,7 +120,7 @@ class ACLRepository(BaseRepository[DocumentACL]):
                 WHERE agent_id = $1
                 ORDER BY granted_at DESC
             """
-            result = await self.db_manager.execute(query, [str(agent_id)])
+            result = await self.db_manager.execute(query, [agent_id])
             rows = result.result()
             return [self._row_to_model(row) for row in rows]
 
@@ -148,9 +149,7 @@ class ACLRepository(BaseRepository[DocumentACL]):
                 WHERE document_id = $1 AND agent_id = $2
                 ORDER BY granted_at DESC
             """
-            result = await self.db_manager.execute(
-                query, [str(document_id), str(agent_id)]
-            )
+            result = await self.db_manager.execute(query, [document_id, agent_id])
             rows = result.result()
             return [self._row_to_model(row) for row in rows]
 
@@ -177,16 +176,17 @@ class ACLRepository(BaseRepository[DocumentACL]):
             True if agent has the permission, False otherwise
         """
         try:
+            # ADMIN permission grants all other permissions
             query = """
                 SELECT 1 FROM document_acl
                 WHERE document_id = $1
                   AND agent_id = $2
-                  AND permission = $3
+                  AND (permission = $3 OR permission = 'ADMIN')
                   AND (expires_at IS NULL OR expires_at > NOW())
                 LIMIT 1
             """
             result = await self.db_manager.execute(
-                query, [str(document_id), str(agent_id), permission]
+                query, [document_id, agent_id, permission]
             )
             return len(result.result()) > 0
 
@@ -219,9 +219,7 @@ class ACLRepository(BaseRepository[DocumentACL]):
                   AND (expires_at IS NULL OR expires_at > NOW())
                 ORDER BY granted_at DESC
             """
-            result = await self.db_manager.execute(
-                query, [str(document_id), str(agent_id)]
-            )
+            result = await self.db_manager.execute(query, [document_id, agent_id])
             rows = result.result()
             return [row["permission"] for row in rows]
 
@@ -253,7 +251,7 @@ class ACLRepository(BaseRepository[DocumentACL]):
                 WHERE document_id = $1 AND agent_id = $2 AND permission = $3
             """
             result = await self.db_manager.execute(
-                query, [str(document_id), str(agent_id), permission]
+                query, [document_id, agent_id, permission]
             )
             return result.affected_rows() > 0
 
@@ -281,9 +279,7 @@ class ACLRepository(BaseRepository[DocumentACL]):
                 DELETE FROM document_acl
                 WHERE document_id = $1 AND agent_id = $2
             """
-            result = await self.db_manager.execute(
-                query, [str(document_id), str(agent_id)]
-            )
+            result = await self.db_manager.execute(query, [document_id, agent_id])
             return result.affected_rows()
 
         except Exception as e:
@@ -414,6 +410,10 @@ class ACLRepository(BaseRepository[DocumentACL]):
         """
         # Convert create schema to dict and create model
         model_data = create_data.model_dump()
+        # Add granted_at timestamp
+        from datetime import datetime
+
+        model_data["granted_at"] = datetime.now()
         # Create a temporary model instance for the base class create method
         temp_model = DocumentACL(**model_data)
         return await self.create(temp_model)
