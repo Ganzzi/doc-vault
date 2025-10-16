@@ -38,6 +38,10 @@ class DocumentBase(BaseModel):
 class DocumentCreate(DocumentBase):
     """Schema for creating a new document."""
 
+    id: Optional[UUID] = Field(
+        None, description="Document UUID (optional, generated if not provided)"
+    )
+
     pass
 
 

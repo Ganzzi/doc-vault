@@ -129,7 +129,7 @@ class BaseRepository(ABC, Generic[T]):
         """
         try:
             query = f"SELECT * FROM {self.table_name} WHERE id = $1"
-            result = await self.db_manager.execute(query, [str(id)])
+            result = await self.db_manager.execute(query, [id])
 
             rows = result.result()
             if not rows:

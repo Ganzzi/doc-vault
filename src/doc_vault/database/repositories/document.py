@@ -327,8 +327,42 @@ class DocumentRepository(BaseRepository[Document]):
         Returns:
             Created Document instance
         """
-        # Convert create schema to dict and create model
-        model_data = create_data.model_dump()
-        # Create a temporary model instance for the base class create method
-        temp_model = Document(**model_data)
-        return await self.create(temp_model)
+        try:
+            # Convert create schema to dict
+            data = create_data.model_dump()
+
+            # Handle optional ID
+            if create_data.id is None:
+                data.pop("id", None)  # Remove None ID so database generates it
+            else:
+                data["id"] = str(create_data.id)  # Convert UUID to string
+
+            # Convert UUIDs to strings for psqlpy
+            data["organization_id"] = str(create_data.organization_id)
+            data["created_by"] = str(create_data.created_by)
+            if create_data.updated_by:
+                data["updated_by"] = str(create_data.updated_by)
+
+            # Build column names and placeholders for insert
+            columns = list(data.keys())
+            placeholders = [f"${i+1}" for i in range(len(columns))]
+            values = list(data.values())
+
+            query = f"""
+                INSERT INTO {self.table_name} ({', '.join(columns)})
+                VALUES ({', '.join(placeholders)})
+                RETURNING *
+            """
+
+            logger.debug(f"Creating document: {query}")
+
+            result = await self.db_manager.execute(query, values)
+            row = result.result()[0]  # First (and only) row
+
+            return self._row_to_model(row)
+
+        except Exception as e:
+            logger.error(f"Failed to create document: {e}")
+            from doc_vault.exceptions import DatabaseError
+
+            raise DatabaseError("Failed to create document") from e

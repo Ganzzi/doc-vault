@@ -185,8 +185,30 @@ class AgentRepository(BaseRepository[Agent]):
         Returns:
             Created Agent instance
         """
-        # Convert create schema to dict and create model
-        model_data = create_data.model_dump()
-        # Create a temporary model instance for the base class create method
-        temp_model = Agent(**model_data)
-        return await self.create(temp_model)
+        try:
+            # Convert create schema to dict
+            data = create_data.model_dump()
+
+            # Build column names and placeholders for insert
+            columns = list(data.keys())
+            placeholders = [f"${i+1}" for i in range(len(columns))]
+            values = list(data.values())
+
+            query = f"""
+                INSERT INTO {self.table_name} ({', '.join(columns)})
+                VALUES ({', '.join(placeholders)})
+                RETURNING *
+            """
+
+            logger.debug(f"Creating agent: {query}")
+
+            result = await self.db_manager.execute(query, values)
+            row = result.result()[0]  # First (and only) row
+
+            return self._row_to_model(row)
+
+        except Exception as e:
+            logger.error(f"Failed to create agent: {e}")
+            from doc_vault.exceptions import DatabaseError
+
+            raise DatabaseError("Failed to create agent") from e
