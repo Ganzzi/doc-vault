@@ -26,10 +26,10 @@ DocVault provides a complete solution for document upload, management, version c
 
 ```bash
 # Using uv (recommended)
-uv add doc-vault
+uv add docvault-sdk
 
 # Or using pip
-pip install doc-vault
+pip install docvault-sdk
 ```
 
 ### Basic Usage
