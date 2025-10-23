@@ -59,17 +59,17 @@ class DocVaultSDK:
 
         # Initialize storage backend
         self._storage_backend = S3StorageBackend(
-            endpoint=self.config.minio.endpoint,
-            access_key=self.config.minio.access_key,
-            secret_key=self.config.minio.secret_key,
-            secure=self.config.minio.secure,
+            endpoint=self.config.minio_endpoint,
+            access_key=self.config.minio_access_key,
+            secret_key=self.config.minio_secret_key,
+            secure=self.config.minio_secure,
         )
 
         # Initialize services
         self._document_service = DocumentService(
             db_manager=self._db_manager,
             storage_backend=self._storage_backend,
-            bucket_prefix=self.config.docvault.bucket_prefix,
+            bucket_prefix=self.config.bucket_prefix,
         )
         self._access_service = AccessService(
             db_manager=self._db_manager,

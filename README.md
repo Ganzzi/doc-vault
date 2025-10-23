@@ -91,7 +91,84 @@ See [Examples](./examples/) for detailed usage patterns including access control
 
 ## ⚙️ Configuration
 
-Create a `.env` file in your project root:
+DocVault supports three flexible configuration patterns to support different deployment scenarios:
+
+### 1. Direct Python Configuration (Recommended for PyPI Users)
+
+For maximum control in your application, pass a `Config` object directly:
+
+```python
+from doc_vault import DocVaultSDK
+from doc_vault.config import Config
+
+# Create configuration programmatically
+config = Config(
+    # PostgreSQL Configuration
+    postgres_host="localhost",
+    postgres_port=5432,
+    postgres_user="postgres",
+    postgres_password="your_password",
+    postgres_db="doc_vault",
+    postgres_ssl="disable",
+    
+    # MinIO/S3 Configuration
+    minio_endpoint="localhost:9000",
+    minio_access_key="minioadmin",
+    minio_secret_key="minioadmin",
+    minio_secure=False,
+    
+    # DocVault Configuration
+    bucket_prefix="doc-vault",
+    log_level="INFO"
+)
+
+# Use the configuration
+async with DocVaultSDK(config=config) as vault:
+    document = await vault.upload(
+        file_path="./report.pdf",
+        name="Report",
+        organization_id="org-123",
+        agent_id="agent-456"
+    )
+```
+
+### 2. Environment Variables (Recommended for Docker/Kubernetes)
+
+Set environment variables before running your application:
+
+```bash
+# PostgreSQL
+export POSTGRES_HOST=postgres
+export POSTGRES_PORT=5432
+export POSTGRES_USER=postgres
+export POSTGRES_PASSWORD=password
+export POSTGRES_DB=doc_vault
+export POSTGRES_SSL=disable
+
+# MinIO/S3
+export MINIO_ENDPOINT=minio:9000
+export MINIO_ACCESS_KEY=minioadmin
+export MINIO_SECRET_KEY=minioadmin
+export MINIO_SECURE=false
+
+# DocVault
+export BUCKET_PREFIX=doc-vault
+export LOG_LEVEL=INFO
+```
+
+Then use the SDK without passing a config:
+
+```python
+from doc_vault import DocVaultSDK
+
+# Automatically loads from environment variables
+async with DocVaultSDK() as vault:
+    document = await vault.upload(...)
+```
+
+### 3. .env File Configuration (Convenient for Local Development)
+
+Create a `.env` file in your project root (git-ignored):
 
 ```bash
 # PostgreSQL Configuration
@@ -113,27 +190,46 @@ BUCKET_PREFIX=doc-vault
 LOG_LEVEL=INFO
 ```
 
-Or configure programmatically:
+Install python-dotenv for local development:
+
+```bash
+uv sync --all  # or: pip install doc-vault[dev]
+```
+
+Then use the SDK as before (automatically loads `.env` file):
 
 ```python
 from doc_vault import DocVaultSDK
-from doc_vault.config import Config
 
-config = Config(
-    postgres_host="localhost",
-    postgres_port=5432,
-    postgres_user="postgres",
-    postgres_password="password",
-    postgres_db="doc_vault",
-    minio_endpoint="localhost:9000",
-    minio_access_key="minioadmin",
-    minio_secret_key="minioadmin"
-)
-
-async with DocVaultSDK(config=config) as vault:
-    # Use vault...
-    pass
+async with DocVaultSDK() as vault:
+    document = await vault.upload(...)
 ```
+
+### Configuration Priority
+
+DocVault uses this priority order when loading configuration (first match wins):
+
+1. **Explicit Config object** - When you pass `Config(...)` directly
+2. **Environment variables** - `POSTGRES_*`, `MINIO_*` variables
+3. **.env file** - Loaded automatically if `python-dotenv` is available
+4. **Defaults** - Hardcoded defaults in the Config class
+
+### Configuration Reference
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `POSTGRES_HOST` | str | `localhost` | PostgreSQL server hostname |
+| `POSTGRES_PORT` | int | `5432` | PostgreSQL server port |
+| `POSTGRES_USER` | str | *required* | PostgreSQL username |
+| `POSTGRES_PASSWORD` | str | *required* | PostgreSQL password |
+| `POSTGRES_DB` | str | *required* | PostgreSQL database name |
+| `POSTGRES_SSL` | str | `disable` | SSL mode: `disable`, `prefer`, or `require` |
+| `MINIO_ENDPOINT` | str | *required* | MinIO/S3 endpoint (e.g., `localhost:9000`) |
+| `MINIO_ACCESS_KEY` | str | *required* | MinIO/S3 access key ID |
+| `MINIO_SECRET_KEY` | str | *required* | MinIO/S3 secret access key |
+| `MINIO_SECURE` | bool | `false` | Use HTTPS for MinIO/S3 |
+| `BUCKET_PREFIX` | str | `doc-vault` | Prefix for S3/MinIO bucket names |
+| `LOG_LEVEL` | str | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
 
 ## 🏗️ Architecture
 

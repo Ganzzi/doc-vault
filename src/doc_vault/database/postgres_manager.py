@@ -38,18 +38,18 @@ class PostgreSQLManager:
         # Build PostgreSQL DSN (Data Source Name)
         # PSQLPy uses a different format than standard libpq
         self.dsn = (
-            f"postgresql://{config.postgres.user}:{config.postgres.password}"
-            f"@{config.postgres.host}:{config.postgres.port}/{config.postgres.db}"
+            f"postgresql://{config.postgres_user}:{config.postgres_password}"
+            f"@{config.postgres_host}:{config.postgres_port}/{config.postgres_db}"
         )
 
         # Add SSL mode if not disabled
-        if config.postgres.ssl != "disable":
-            self.dsn += f"?sslmode={config.postgres.ssl}"
+        if config.postgres_ssl != "disable":
+            self.dsn += f"?sslmode={config.postgres_ssl}"
 
         logger.info(
             f"PostgreSQL manager configured for "
-            f"{config.postgres.host}:{config.postgres.port}/{config.postgres.db} "
-            f"(SSL: {config.postgres.ssl})"
+            f"{config.postgres_host}:{config.postgres_port}/{config.postgres_db} "
+            f"(SSL: {config.postgres_ssl})"
         )
 
     async def initialize(self) -> None:
@@ -70,8 +70,8 @@ class PostgreSQLManager:
             }
 
             # Add SSL context if SSL is enabled
-            if self.config.postgres.ssl_context is not None:
-                pool_kwargs["ssl_context"] = self.config.postgres.ssl_context
+            if self.config.postgres_ssl_context is not None:
+                pool_kwargs["ssl_context"] = self.config.postgres_ssl_context
 
             self._pool = ConnectionPool(**pool_kwargs)
             self._initialized = True
