@@ -7,6 +7,27 @@ All notable changes to DocVault SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Configuration System Refactoring**: Simplified config from nested classes to flat structure
+  - Flattened PostgresConfig, MinioConfig, DocVaultConfig into single Config class
+  - Clear field naming with prefixes (postgres_*, minio_*)
+  - Support for three configuration patterns:
+    * Direct Python Configuration (recommended for PyPI users)
+    * Environment Variables (recommended for Docker/Kubernetes)
+    * .env File Configuration (convenient for local development)
+- **Dependency Management**: Moved python-dotenv to optional dev dependencies
+  - Production installations no longer require python-dotenv
+  - .env file support still available for local development
+- **Documentation**: Complete rewrite of Configuration section in README
+  - Added comprehensive examples for all three configuration patterns
+  - Added Configuration Priority and Reference tables
+
+### Removed
+- Unused environment variables: DEBUG, MINIO_REGION, MINIO_PORT, MINIO_CONSOLE_PORT
+- Nested config class dependencies from core SDK
+
 ## [1.0.0] - 2025-10-16
 
 ### Added
