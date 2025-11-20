@@ -500,3 +500,319 @@ class AccessService:
         """
         # Delegate to existing implementation
         return await self.get_document_permissions(document_id, agent_id)
+
+    # Phase 8: Permissions Refactoring - Consolidated API (v2.0)
+
+    async def set_permissions_bulk(
+        self,
+        document_id: str | UUID,
+        permissions: List[dict],
+        granted_by: str | UUID,
+    ) -> List[DocumentACL]:
+        """
+        Set multiple permissions in a single operation (v2.0).
+
+        Consolidated permissions API that replaces share() and revoke().
+        Allows setting, updating, or removing permissions in bulk.
+
+        Args:
+            document_id: Document UUID
+            permissions: List of permission dicts with:
+                - agent_id: Agent UUID
+                - permission: Permission level (READ, WRITE, DELETE, SHARE, ADMIN)
+                - expires_at: Optional expiration datetime (ISO format string or datetime)
+                - action: Optional 'remove' to delete permission, default 'grant'
+            granted_by: Agent UUID (must have SHARE permission)
+
+        Returns:
+            List of updated/created DocumentACL instances
+
+        Raises:
+            DocumentNotFoundError: If document doesn't exist
+            PermissionDeniedError: If agent lacks SHARE permission
+            ValidationError: If permissions are invalid
+        """
+        from datetime import datetime
+
+        # Convert to UUIDs
+        if isinstance(document_id, str):
+            document_id = UUID(document_id)
+        if isinstance(granted_by, str):
+            granted_by = UUID(granted_by)
+
+        # Validate document exists
+        doc = await self.document_repo.get_by_id(document_id)
+        if not doc:
+            raise DocumentNotFoundError(f"Document {document_id} not found")
+
+        # Check SHARE permission
+        has_share = await self.acl_repo.check_permission(
+            document_id, granted_by, "SHARE"
+        )
+        if not has_share:
+            raise PermissionDeniedError(
+                f"Agent {granted_by} does not have SHARE permission for document {document_id}"
+            )
+
+        # Validate and process permissions
+        valid_permissions = {"READ", "WRITE", "DELETE", "SHARE", "ADMIN"}
+        updated_acls = []
+
+        async with self.db_manager.connection() as conn:
+            async with conn.transaction():
+                for perm_dict in permissions:
+                    if "agent_id" not in perm_dict:
+                        raise ValidationError("Each permission must have 'agent_id'")
+
+                    agent_id = perm_dict["agent_id"]
+                    if isinstance(agent_id, str):
+                        agent_id = UUID(agent_id)
+
+                    # Validate agent exists
+                    agent = await self.agent_repo.get_by_id(agent_id)
+                    if not agent:
+                        raise AgentNotFoundError(f"Agent {agent_id} not found")
+
+                    # Check if action is 'remove'
+                    action = perm_dict.get("action", "grant")
+                    if action == "remove":
+                        # Delete permission
+                        permission_level = perm_dict.get("permission", "READ")
+                        await self.acl_repo.delete_by_document_agent_permission(
+                            document_id, agent_id, permission_level
+                        )
+                        logger.info(
+                            f"Removed {permission_level} permission from {agent_id} for document {document_id}"
+                        )
+                    else:
+                        # Grant/update permission
+                        if "permission" not in perm_dict:
+                            raise ValidationError(
+                                "Permission level required: READ, WRITE, DELETE, SHARE, ADMIN"
+                            )
+
+                        permission = perm_dict["permission"]
+                        if permission not in valid_permissions:
+                            raise ValidationError(
+                                f"Invalid permission: {permission}. Must be one of {valid_permissions}"
+                            )
+
+                        # Parse expiration if provided
+                        expires_at = None
+                        if "expires_at" in perm_dict and perm_dict["expires_at"]:
+                            expires_str = perm_dict["expires_at"]
+                            if isinstance(expires_str, str):
+                                expires_at = datetime.fromisoformat(expires_str)
+                            else:
+                                expires_at = expires_str
+
+                        # Delete existing permission if updating
+                        await self.acl_repo.delete_by_document_agent_permission(
+                            document_id, agent_id, permission
+                        )
+
+                        # Create new permission
+                        acl_create = DocumentACLCreate(
+                            document_id=document_id,
+                            agent_id=agent_id,
+                            permission=permission,
+                            granted_by=granted_by,
+                            expires_at=expires_at,
+                        )
+                        acl = await self.acl_repo.create(acl_create)
+                        updated_acls.append(acl)
+                        logger.info(
+                            f"Set {permission} permission for {agent_id} on document {document_id}"
+                        )
+
+        return updated_acls
+
+    async def get_permissions_detailed(
+        self, document_id: str | UUID, agent_id: Optional[str | UUID] = None
+    ) -> dict:
+        """
+        Get detailed permission information for a document (v2.0).
+
+        Retrieve all permissions with detailed metadata and filtering options.
+
+        Args:
+            document_id: Document UUID
+            agent_id: Optional agent UUID to filter permissions for specific agent
+
+        Returns:
+            Dictionary with document and its permissions
+
+        Raises:
+            DocumentNotFoundError: If document doesn't exist
+        """
+        if isinstance(document_id, str):
+            document_id = UUID(document_id)
+        if agent_id and isinstance(agent_id, str):
+            agent_id = UUID(agent_id)
+
+        # Validate document exists
+        doc = await self.document_repo.get_by_id(document_id)
+        if not doc:
+            raise DocumentNotFoundError(f"Document {document_id} not found")
+
+        # Get all ACLs
+        acls = await self.acl_repo.get_by_document(document_id)
+
+        # Filter by agent if provided
+        if agent_id:
+            acls = [acl for acl in acls if acl.agent_id == agent_id]
+
+        # Build detailed response
+        permissions_list = []
+        for acl in acls:
+            permissions_list.append(
+                {
+                    "agent_id": str(acl.agent_id),
+                    "permission": acl.permission,
+                    "granted_by": str(acl.granted_by),
+                    "granted_at": acl.granted_at.isoformat(),
+                    "expires_at": (
+                        acl.expires_at.isoformat() if acl.expires_at else None
+                    ),
+                    "is_expired": (
+                        acl.expires_at and acl.expires_at < datetime.now()
+                        if acl.expires_at
+                        else False
+                    ),
+                }
+            )
+
+        return {
+            "document_id": str(document_id),
+            "document_name": doc.name,
+            "total_permissions": len(permissions_list),
+            "permissions": permissions_list,
+            "agent_filter": str(agent_id) if agent_id else None,
+        }
+
+    async def check_permissions_multi(
+        self,
+        document_id: str | UUID,
+        agent_id: str | UUID,
+        permissions: List[str],
+    ) -> dict:
+        """
+        Check multiple permissions at once (v2.0).
+
+        Efficiently check if an agent has multiple specific permissions.
+
+        Args:
+            document_id: Document UUID
+            agent_id: Agent UUID
+            permissions: List of permission levels to check
+
+        Returns:
+            Dictionary with permission check results
+
+        Raises:
+            DocumentNotFoundError: If document doesn't exist
+            AgentNotFoundError: If agent doesn't exist
+        """
+        if isinstance(document_id, str):
+            document_id = UUID(document_id)
+        if isinstance(agent_id, str):
+            agent_id = UUID(agent_id)
+
+        # Validate agent and document exist
+        agent = await self.agent_repo.get_by_id(agent_id)
+        if not agent:
+            raise AgentNotFoundError(f"Agent {agent_id} not found")
+
+        doc = await self.document_repo.get_by_id(document_id)
+        if not doc:
+            raise DocumentNotFoundError(f"Document {document_id} not found")
+
+        # Check each permission
+        results = {}
+        for permission in permissions:
+            has_perm = await self.acl_repo.check_permission(
+                document_id, agent_id, permission
+            )
+            results[permission] = has_perm
+
+        return {
+            "document_id": str(document_id),
+            "agent_id": str(agent_id),
+            "permissions_checked": results,
+            "all_granted": all(results.values()),
+            "any_granted": any(results.values()),
+        }
+
+    async def transfer_ownership(
+        self,
+        document_id: str | UUID,
+        from_agent_id: str | UUID,
+        to_agent_id: str | UUID,
+        authorized_by: str | UUID,
+    ) -> List[DocumentACL]:
+        """
+        Transfer document ownership from one agent to another (v2.0).
+
+        Removes ADMIN permission from old owner and grants it to new owner.
+
+        Args:
+            document_id: Document UUID
+            from_agent_id: Current owner agent UUID
+            to_agent_id: New owner agent UUID
+            authorized_by: Agent UUID authorizing transfer (must be current owner or admin)
+
+        Returns:
+            List of updated ACL entries
+
+        Raises:
+            DocumentNotFoundError: If document doesn't exist
+            PermissionDeniedError: If not authorized to transfer
+        """
+        # Convert to UUIDs
+        if isinstance(document_id, str):
+            document_id = UUID(document_id)
+        if isinstance(from_agent_id, str):
+            from_agent_id = UUID(from_agent_id)
+        if isinstance(to_agent_id, str):
+            to_agent_id = UUID(to_agent_id)
+        if isinstance(authorized_by, str):
+            authorized_by = UUID(authorized_by)
+
+        # Validate document
+        doc = await self.document_repo.get_by_id(document_id)
+        if not doc:
+            raise DocumentNotFoundError(f"Document {document_id} not found")
+
+        # Check authorization
+        is_owner = from_agent_id == authorized_by
+        is_admin = await self.acl_repo.check_permission(
+            document_id, authorized_by, "ADMIN"
+        )
+
+        if not (is_owner or is_admin):
+            raise PermissionDeniedError(
+                f"Agent {authorized_by} is not authorized to transfer ownership"
+            )
+
+        # Perform transfer
+        async with self.db_manager.connection() as conn:
+            async with conn.transaction():
+                # Remove ADMIN from old owner
+                await self.acl_repo.delete_by_document_agent_permission(
+                    document_id, from_agent_id, "ADMIN"
+                )
+
+                # Grant ADMIN to new owner
+                acl_create = DocumentACLCreate(
+                    document_id=document_id,
+                    agent_id=to_agent_id,
+                    permission="ADMIN",
+                    granted_by=authorized_by,
+                )
+                new_admin = await self.acl_repo.create(acl_create)
+
+                logger.info(
+                    f"Transferred ownership of {document_id} from {from_agent_id} to {to_agent_id}"
+                )
+
+                return [new_admin]

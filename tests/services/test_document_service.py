@@ -901,4 +901,3 @@ class TestDocumentSearch:
                 organization_id=test_org,
                 agent_id=test_agent,
             )
-

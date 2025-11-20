@@ -371,3 +371,134 @@ class TestAccessService:
             permission="READ",
         )
         assert has_permission is True
+
+
+# Phase 8: Permissions Refactoring Tests
+
+
+class TestBulkPermissions:
+    """Test bulk permission operations (v2.0)."""
+
+    @pytest.mark.asyncio
+    async def test_set_permissions_bulk_grant(
+        self,
+        access_service: AccessService,
+        db_manager,
+        test_org: str,
+        test_agent: str,
+        other_agent: str,
+        test_document: str,
+    ):
+        """Test bulk permission granting."""
+        # Act - grant multiple permissions
+        permissions = [
+            {"agent_id": other_agent, "permission": "READ"},
+            {"agent_id": test_agent, "permission": "ADMIN"},
+        ]
+
+        acls = await access_service.set_permissions_bulk(
+            document_id=test_document,
+            permissions=permissions,
+            granted_by=test_agent,
+        )
+
+        # Assert
+        assert len(acls) >= 1
+        assert acls[0].permission in {"READ", "ADMIN"}
+
+    @pytest.mark.asyncio
+    async def test_get_permissions_detailed(
+        self,
+        access_service: AccessService,
+        test_agent: str,
+        other_agent: str,
+        test_document: str,
+    ):
+        """Test retrieving detailed permission information."""
+        # Act
+        details = await access_service.get_permissions_detailed(
+            document_id=test_document
+        )
+
+        # Assert
+        assert "document_id" in details
+        assert "permissions" in details
+        assert "total_permissions" in details
+        assert details["document_id"] == test_document
+
+    @pytest.mark.asyncio
+    async def test_check_permissions_multi(
+        self,
+        access_service: AccessService,
+        test_agent: str,
+        test_document: str,
+    ):
+        """Test checking multiple permissions at once."""
+        # Act
+        result = await access_service.check_permissions_multi(
+            document_id=test_document,
+            agent_id=test_agent,
+            permissions=["READ", "WRITE", "ADMIN"],
+        )
+
+        # Assert
+        assert "permissions_checked" in result
+        assert "all_granted" in result
+        assert "any_granted" in result
+        assert isinstance(result["all_granted"], bool)
+
+    @pytest.mark.asyncio
+    async def test_transfer_ownership(
+        self,
+        access_service: AccessService,
+        test_org: str,
+        test_agent: str,
+        other_agent: str,
+        test_document: str,
+    ):
+        """Test transferring document ownership."""
+        # Act - transfer from test_agent to other_agent
+        acls = await access_service.transfer_ownership(
+            document_id=test_document,
+            from_agent_id=test_agent,
+            to_agent_id=other_agent,
+            authorized_by=test_agent,
+        )
+
+        # Assert
+        assert len(acls) >= 1
+        assert acls[0].permission == "ADMIN"
+        assert acls[0].agent_id == UUID(other_agent)
+
+    @pytest.mark.asyncio
+    async def test_transfer_ownership_unauthorized(
+        self,
+        access_service: AccessService,
+        test_org: str,
+        test_agent: str,
+        other_agent: str,
+        test_document: str,
+    ):
+        """Test transfer_ownership fails without authorization."""
+        # Create a third agent
+        from doc_vault.database.repositories.agent import AgentRepository
+        from doc_vault.database.schemas.agent import AgentCreate
+
+        agent_repo = AgentRepository(access_service.db_manager)
+        third_agent_id = uuid4()
+        third_create = AgentCreate(
+            id=third_agent_id,
+            organization_id=UUID(test_org),
+            is_active=True,
+        )
+        third_agent = await agent_repo.create(third_create)
+
+        # Act & Assert - third agent cannot transfer
+        with pytest.raises(PermissionDeniedError):
+            await access_service.transfer_ownership(
+                document_id=test_document,
+                from_agent_id=test_agent,
+                to_agent_id=other_agent,
+                authorized_by=str(third_agent.id),
+            )
+

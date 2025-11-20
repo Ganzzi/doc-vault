@@ -578,3 +578,38 @@ class ACLRepository(BaseRepository[DocumentACL]):
             from doc_vault.exceptions import DatabaseError
 
             raise DatabaseError("Failed to set permissions") from e
+
+    async def delete_by_document_agent_permission(
+        self,
+        document_id: UUID | str,
+        agent_id: UUID | str,
+        permission: str,
+    ) -> bool:
+        """
+        Delete a specific permission for an agent on a document.
+
+        Args:
+            document_id: Document UUID
+            agent_id: Agent UUID
+            permission: Permission level to delete
+
+        Returns:
+            True if deleted, False if not found
+        """
+        try:
+            document_id = self._ensure_uuid(document_id)
+            agent_id = self._ensure_uuid(agent_id)
+
+            query = """
+                DELETE FROM document_acl
+                WHERE document_id = $1 AND agent_id = $2 AND permission = $3
+            """
+
+            await self.manager.execute(query, document_id, agent_id, permission)
+            return True
+
+        except Exception as e:
+            logger.error(
+                f"Failed to delete ACL entry for {agent_id} on {document_id}: {e}"
+            )
+            return False
