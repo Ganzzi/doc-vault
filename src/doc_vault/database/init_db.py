@@ -41,9 +41,10 @@ async def detect_database_version(manager: PostgreSQLManager) -> str:
         FROM information_schema.columns 
         WHERE table_name = 'organizations' AND column_name = 'external_id'
         """
-        result = await manager.query(query)
+        result = await manager.execute(query)
+        rows = result.result() if result else []
 
-        if result:
+        if rows:
             # Has external_id column -> v1 schema
             logger.info("Detected v1 schema (has external_id column)")
             return "v1"
@@ -54,9 +55,10 @@ async def detect_database_version(manager: PostgreSQLManager) -> str:
         FROM information_schema.columns 
         WHERE table_name = 'documents' AND column_name = 'prefix'
         """
-        result = await manager.query(query)
+        result = await manager.execute(query)
+        rows = result.result() if result else []
 
-        if result:
+        if rows:
             # Has prefix column -> v2 schema
             logger.info("Detected v2 schema (has prefix column)")
             return "v2"
@@ -67,9 +69,10 @@ async def detect_database_version(manager: PostgreSQLManager) -> str:
         FROM information_schema.tables 
         WHERE table_schema = 'public' AND table_name IN ('organizations', 'agents', 'documents')
         """
-        result = await manager.query(query)
+        result = await manager.execute(query)
+        rows = result.result() if result else []
 
-        if result:
+        if rows:
             # Some tables exist but no recognized schema
             logger.warning("Detected unknown/partial schema")
             return "unknown"
