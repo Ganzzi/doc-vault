@@ -16,6 +16,7 @@ import pytest
 from dotenv import load_dotenv
 
 from doc_vault.config import Config
+from doc_vault.core import DocVaultSDK
 from doc_vault.database.postgres_manager import PostgreSQLManager
 from doc_vault.database.repositories.acl import ACLRepository
 from doc_vault.database.repositories.agent import AgentRepository
@@ -142,6 +143,14 @@ async def version_service(db_manager: PostgreSQLManager) -> VersionService:
     """Create VersionService instance for tests."""
     service = VersionService(db_manager=db_manager)
     return service
+
+
+@pytest.fixture
+async def doc_vault_sdk(config: Config) -> AsyncGenerator[DocVaultSDK, None]:
+    """Create DocVaultSDK instance for tests."""
+    sdk = DocVaultSDK(config=config)
+    async with sdk:
+        yield sdk
 
 
 @pytest.fixture
