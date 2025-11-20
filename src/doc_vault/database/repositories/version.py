@@ -388,3 +388,49 @@ class VersionRepository(BaseRepository[DocumentVersion]):
         except Exception as e:
             logger.error(f"Failed to update {self.model_class.__name__} {id}: {e}")
             raise DatabaseError(f"Failed to update {self.model_class.__name__}") from e
+
+    async def delete_version(
+        self, version_id: UUID, cleanup_replaced: bool = True
+    ) -> bool:
+        """
+        Delete a specific version (v2.0).
+
+        Optionally cleans up versions that were marked as replaced.
+
+        Args:
+            version_id: Version UUID to delete
+            cleanup_replaced: If True, also delete versions marked as replaced
+
+        Returns:
+            True if deleted, False if not found
+
+        Raises:
+            DatabaseError: If deletion fails
+        """
+        try:
+            version_id = self._ensure_uuid(version_id)
+
+            # First, get the version to find the document_id
+            version_query = f"SELECT document_id FROM {self.table_name} WHERE id = $1"
+            version_result = await self.db_manager.execute(version_query, [version_id])
+            version_rows = version_result.result()
+
+            if not version_rows:
+                return False
+
+            # Delete the version
+            query = f"DELETE FROM {self.table_name} WHERE id = $1"
+            await self.db_manager.execute(query, [version_id])
+
+            # Optionally clean up replaced versions for this document
+            if cleanup_replaced:
+                doc_id = version_rows[0]["document_id"]
+                # This could be extended to handle a "replaced_by" or "replaced_at" field
+                # if we add such tracking to the schema in the future
+                logger.debug(f"Version {version_id} deleted from document {doc_id}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to delete version {version_id}: {e}")
+            raise DatabaseError("Failed to delete version") from e

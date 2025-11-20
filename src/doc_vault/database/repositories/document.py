@@ -2,15 +2,22 @@
 Document repository for DocVault.
 
 Provides CRUD operations for documents table.
+
+v2.0 Changes:
+- Added prefix and path columns for hierarchical document organization
+- Added list_by_prefix() method for prefix-based listing
+- Added list_recursive() method for recursive listing with depth control
 """
 
 import logging
+import math
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from doc_vault.database.postgres_manager import PostgreSQLManager
 from doc_vault.database.repositories.base import BaseRepository
 from doc_vault.database.schemas.document import Document, DocumentCreate
+from doc_vault.exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +26,7 @@ class DocumentRepository(BaseRepository[Document]):
     """
     Repository for Document entities.
 
-    Provides CRUD operations and document-specific queries.
+    v2.0: Provides CRUD operations and hierarchical prefix-based queries.
     """
 
     @property
@@ -51,6 +58,8 @@ class DocumentRepository(BaseRepository[Document]):
             file_size=row["file_size"],
             mime_type=row["mime_type"],
             storage_path=row["storage_path"],
+            prefix=row.get("prefix"),
+            path=row.get("path"),
             current_version=row["current_version"],
             status=row["status"],
             created_by=row["created_by"],
@@ -72,24 +81,26 @@ class DocumentRepository(BaseRepository[Document]):
             Dict suitable for database insertion/update
         """
         data = {
-            "organization_id": str(model.organization_id),
+            "organization_id": model.organization_id,
             "name": model.name,
             "description": model.description,
             "filename": model.filename,
             "file_size": model.file_size,
             "mime_type": model.mime_type,
             "storage_path": model.storage_path,
+            "prefix": model.prefix,
+            "path": model.path,
             "current_version": model.current_version,
             "status": model.status,
-            "created_by": str(model.created_by),
-            "updated_by": str(model.updated_by) if model.updated_by else None,
+            "created_by": model.created_by,
+            "updated_by": model.updated_by,
             "metadata": model.metadata,
             "tags": model.tags,
         }
 
         # Include ID if it exists (for updates)
         if hasattr(model, "id") and model.id:
-            data["id"] = str(model.id)
+            data["id"] = model.id
 
         return data
 
@@ -614,3 +625,182 @@ class DocumentRepository(BaseRepository[Document]):
         """
         # Call the base class delete method for hard delete
         return await super().delete(id)
+
+    async def list_by_prefix(
+        self, org_id: UUID, prefix: str, limit: int = 100, offset: int = 0
+    ) -> List[Document]:
+        """
+        List documents with a specific prefix (direct children only).
+
+        v2.0 Feature: Hierarchical document organization via prefixes.
+
+        Args:
+            org_id: Organization UUID
+            prefix: Prefix path (e.g., "/reports/2025/")
+            limit: Maximum number of documents to return
+            offset: Number of documents to skip
+
+        Returns:
+            List of Document instances matching the prefix
+
+        Raises:
+            DatabaseError: If query fails
+        """
+        try:
+            org_id = self._ensure_uuid(org_id)
+
+            # List documents with this exact prefix (direct children)
+            # Exclude search_vector to avoid tsvector issues
+            columns = [
+                "id",
+                "organization_id",
+                "name",
+                "description",
+                "filename",
+                "file_size",
+                "mime_type",
+                "storage_path",
+                "prefix",
+                "path",
+                "current_version",
+                "status",
+                "created_by",
+                "updated_by",
+                "metadata",
+                "tags",
+                "created_at",
+                "updated_at",
+            ]
+
+            query = f"""
+                SELECT {', '.join(columns)} FROM {self.table_name}
+                WHERE organization_id = $1 AND prefix = $2 AND status != 'deleted'
+                ORDER BY name ASC
+                LIMIT $3 OFFSET $4
+            """
+
+            result = await self.db_manager.execute(
+                query, [org_id, prefix, limit, offset]
+            )
+            rows = result.result()
+
+            return [self._row_to_model(row) for row in rows]
+
+        except Exception as e:
+            logger.error(f"Failed to list documents by prefix {prefix}: {e}")
+            raise DatabaseError("Failed to list documents by prefix") from e
+
+    async def list_recursive(
+        self,
+        org_id: UUID,
+        prefix: str,
+        max_depth: Optional[int] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Document]:
+        """
+        Recursively list documents under a prefix with optional depth limit.
+
+        v2.0 Feature: Hierarchical document discovery with depth control.
+
+        Args:
+            org_id: Organization UUID
+            prefix: Prefix path (e.g., "/reports/")
+            max_depth: Maximum depth to traverse (None = unlimited)
+                      Depth is calculated from prefix slashes
+            limit: Maximum number of documents to return
+            offset: Number of documents to skip
+
+        Returns:
+            List of Document instances under the prefix (recursively)
+
+        Raises:
+            DatabaseError: If query fails
+        """
+        try:
+            org_id = self._ensure_uuid(org_id)
+
+            # Calculate depth parameters if limit specified
+            if max_depth is not None:
+                # Count slashes in prefix to determine base depth
+                base_depth = prefix.count("/") - 1  # -1 for leading slash
+                max_allowed_depth = base_depth + max_depth
+                # Create pattern for paths up to max depth
+                # E.g., prefix="/reports/" with max_depth=2 allows:
+                # /reports/*, /reports/*/*, but not /reports/*/*/*
+                depth_limit = "/" * (max_allowed_depth + 1)
+
+            # List all documents recursively under this prefix
+            # Exclude search_vector to avoid tsvector issues
+            columns = [
+                "id",
+                "organization_id",
+                "name",
+                "description",
+                "filename",
+                "file_size",
+                "mime_type",
+                "storage_path",
+                "prefix",
+                "path",
+                "current_version",
+                "status",
+                "created_by",
+                "updated_by",
+                "metadata",
+                "tags",
+                "created_at",
+                "updated_at",
+            ]
+
+            if max_depth is not None:
+                # With depth limit: match paths starting with prefix and not exceeding depth
+                query = f"""
+                    SELECT {', '.join(columns)} FROM {self.table_name}
+                    WHERE organization_id = $1 
+                      AND (prefix LIKE $2 || '%' OR path LIKE $2 || '%')
+                      AND (prefix IS NULL OR (prefix NOT LIKE $2 || '%' || '/' || '%/%'))
+                      AND status != 'deleted'
+                    ORDER BY path ASC
+                    LIMIT $3 OFFSET $4
+                """
+                result = await self.db_manager.execute(
+                    query, [org_id, prefix, limit, offset]
+                )
+            else:
+                # Without depth limit: all documents under prefix
+                query = f"""
+                    SELECT {', '.join(columns)} FROM {self.table_name}
+                    WHERE organization_id = $1 
+                      AND (prefix LIKE $2 || '%' OR path LIKE $2 || '%')
+                      AND status != 'deleted'
+                    ORDER BY path ASC
+                    LIMIT $3 OFFSET $4
+                """
+                result = await self.db_manager.execute(
+                    query, [org_id, prefix, limit, offset]
+                )
+
+            rows = result.result()
+            return [self._row_to_model(row) for row in rows]
+
+        except Exception as e:
+            logger.error(
+                f"Failed to recursively list documents under prefix {prefix}: {e}"
+            )
+            raise DatabaseError("Failed to recursively list documents") from e
+
+    @staticmethod
+    def _calculate_depth(path: str) -> int:
+        """
+        Calculate depth of a path (number of slashes).
+
+        Args:
+            path: Path string (e.g., "/reports/2025/q1/")
+
+        Returns:
+            Number of levels in the path
+        """
+        if not path:
+            return 0
+        return path.count("/") - 1  # -1 for leading slash

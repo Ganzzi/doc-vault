@@ -2,6 +2,12 @@
 Organization repository for DocVault.
 
 Provides CRUD operations for organizations table.
+
+v2.0 Changes:
+- Organizations use external UUIDs as primary keys (no external_id field)
+- Removed name field (managed externally)
+- Removed get_by_external_id() method
+- Updated to use pure UUID-based lookups
 """
 
 import logging
@@ -11,6 +17,7 @@ from uuid import UUID
 from doc_vault.database.postgres_manager import PostgreSQLManager
 from doc_vault.database.repositories.base import BaseRepository
 from doc_vault.database.schemas.organization import Organization, OrganizationCreate
+from doc_vault.exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +26,8 @@ class OrganizationRepository(BaseRepository[Organization]):
     """
     Repository for Organization entities.
 
-    Provides CRUD operations and organization-specific queries.
+    v2.0: Provides UUID-based CRUD operations for organizations.
+    Organizations are pure reference entities with only UUID and metadata.
     """
 
     @property
@@ -44,8 +52,6 @@ class OrganizationRepository(BaseRepository[Organization]):
         """
         return Organization(
             id=row["id"],
-            external_id=row["external_id"],
-            name=row["name"],
             metadata=row["metadata"] or {},
             created_at=row["created_at"],
             updated_at=row["updated_at"],
@@ -62,62 +68,28 @@ class OrganizationRepository(BaseRepository[Organization]):
             Dict suitable for database insertion/update
         """
         data = {
-            "external_id": model.external_id,
-            "name": model.name,
+            "id": model.id,
             "metadata": model.metadata,
         }
 
-        # Include ID if it exists (for updates)
-        if hasattr(model, "id") and model.id:
-            data["id"] = str(model.id)
-
         return data
 
-    async def get_by_external_id(self, external_id: str) -> Optional[Organization]:
+    async def create(self, create_data: OrganizationCreate) -> Organization:
         """
-        Get an organization by its external ID.
+        Create an organization with external UUID.
+
+        v2.0: ID is provided by caller (external system UUID).
 
         Args:
-            external_id: External system identifier
-
-        Returns:
-            Organization instance or None if not found
-        """
-        try:
-            query = "SELECT * FROM organizations WHERE external_id = $1"
-            result = await self.db_manager.execute(query, [external_id])
-
-            rows = result.result()
-            if not rows:
-                return None
-
-            return self._row_to_model(rows[0])
-
-        except Exception as e:
-            logger.error(
-                f"Failed to get organization by external_id {external_id}: {e}"
-            )
-            from doc_vault.exceptions import DatabaseError
-
-            raise DatabaseError("Failed to get organization by external ID") from e
-
-    async def create_from_create_schema(
-        self, create_data: OrganizationCreate
-    ) -> Organization:
-        """
-        Create an organization from OrganizationCreate schema.
-
-        This is a convenience method that handles the conversion from
-        create schema to full model.
-
-        Args:
-            create_data: OrganizationCreate schema instance
+            create_data: OrganizationCreate schema with id and metadata
 
         Returns:
             Created Organization instance
+
+        Raises:
+            DatabaseError: If creation fails
         """
         try:
-            # Convert create schema to dict
             data = create_data.model_dump()
 
             # Build column names and placeholders for insert
@@ -140,6 +112,63 @@ class OrganizationRepository(BaseRepository[Organization]):
 
         except Exception as e:
             logger.error(f"Failed to create organization: {e}")
-            from doc_vault.exceptions import DatabaseError
-
             raise DatabaseError("Failed to create organization") from e
+
+    async def delete(self, org_id: UUID, force: bool = False) -> bool:
+        """
+        Delete an organization.
+
+        v2.0: Organizations cascade-delete their agents and documents.
+
+        Args:
+            org_id: Organization UUID to delete
+            force: If True, delete even if it has related entities (cascading)
+                   If False, check first and raise error if entities exist
+
+        Returns:
+            True if deleted, False if not found
+
+        Raises:
+            DatabaseError: If deletion fails or entities exist (if force=False)
+        """
+        try:
+            org_id = self._ensure_uuid(org_id)
+
+            if not force:
+                # Check for agents
+                agents_query = (
+                    "SELECT COUNT(*) as count FROM agents WHERE organization_id = $1"
+                )
+                agents_result = await self.db_manager.execute(agents_query, [org_id])
+                agent_count = agents_result.result()[0]["count"]
+
+                if agent_count > 0:
+                    raise DatabaseError(
+                        f"Cannot delete organization with {agent_count} agent(s). "
+                        "Use force=True to cascade delete."
+                    )
+
+                # Check for documents
+                docs_query = (
+                    "SELECT COUNT(*) as count FROM documents WHERE organization_id = $1"
+                )
+                docs_result = await self.db_manager.execute(docs_query, [org_id])
+                doc_count = docs_result.result()[0]["count"]
+
+                if doc_count > 0:
+                    raise DatabaseError(
+                        f"Cannot delete organization with {doc_count} document(s). "
+                        "Use force=True to cascade delete."
+                    )
+
+            # Delete organization (cascade delete handled by foreign key constraints)
+            query = "DELETE FROM organizations WHERE id = $1"
+            await self.db_manager.execute(query, [org_id])
+
+            return True
+
+        except DatabaseError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to delete organization {org_id}: {e}")
+            raise DatabaseError("Failed to delete organization") from e

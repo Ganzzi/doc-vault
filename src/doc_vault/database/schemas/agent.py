@@ -1,53 +1,80 @@
 """
 Pydantic schemas for Agent entity.
+
+v2.0 Changes:
+- Agents use external UUIDs as primary keys
+- Removed internal_id/external_id duplication
+- Removed name, email, agent_type (managed externally)
+- Agent ID is now the external UUID provided by the caller
 """
 
 from datetime import datetime
 from typing import Any, Dict, Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from pydantic import BaseModel, Field, ConfigDict
 
 
 class AgentBase(BaseModel):
-    """Base schema for Agent entity."""
+    """Base schema for Agent entity (v2.0)."""
 
-    external_id: str = Field(..., description="External system identifier")
     organization_id: UUID = Field(..., description="Organization UUID")
-    name: str = Field(..., description="Agent display name")
-    email: Optional[str] = Field(None, description="Agent email address")
-    agent_type: str = Field(
-        default="human", description="Agent type", pattern="^(human|ai|service)$"
-    )
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata"
     )
     is_active: bool = Field(default=True, description="Whether agent is active")
 
 
-class AgentCreate(AgentBase):
-    """Schema for creating a new agent."""
+class AgentCreate(BaseModel):
+    """Schema for creating a new agent.
 
-    pass
+    v2.0: ID must be provided by caller (external UUID).
+    Name, email, and agent_type are managed externally.
+    """
+
+    id: UUID = Field(..., description="Agent UUID (from external system)")
+    organization_id: UUID = Field(..., description="Organization UUID")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional metadata"
+    )
+    is_active: bool = Field(default=True, description="Whether agent is active")
 
 
 class AgentUpdate(BaseModel):
     """Schema for updating an agent."""
 
-    name: Optional[str] = Field(None, description="Agent display name")
-    email: Optional[str] = Field(None, description="Agent email address")
-    agent_type: Optional[str] = Field(
-        None, description="Agent type", pattern="^(human|ai|service)$"
-    )
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
     is_active: Optional[bool] = Field(None, description="Whether agent is active")
 
 
-class Agent(AgentBase):
-    """Full schema for Agent entity including database fields."""
+class Agent(BaseModel):
+    """Full schema for Agent entity including database fields (v2.0).
+
+    v2.0 Model:
+    - id: External UUID (provided at creation)
+    - organization_id: Organization this agent belongs to
+    - metadata: Optional additional data
+    - is_active: Whether agent is active
+    - timestamps: Automatic database timestamps
+
+    Example:
+        agent = Agent(
+            id=UUID("550e8400-e29b-41d4-a716-446655440000"),
+            organization_id=UUID("550e8400-e29b-41d4-a716-446655440001"),
+            metadata={"role": "manager"},
+            is_active=True,
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: UUID = Field(default_factory=uuid4, description="Internal UUID")
+    id: UUID = Field(..., description="Agent UUID (external reference)")
+    organization_id: UUID = Field(..., description="Organization UUID")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional metadata"
+    )
+    is_active: bool = Field(default=True, description="Whether agent is active")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
