@@ -1014,6 +1014,7 @@ class DocVaultSDK:
         document_id: str | UUID,
         file_input: Any,
         agent_id: str | UUID,
+        change_description: str = "Content updated",
         create_version: bool = True,
         filename: Optional[str] = None,
         content_type: Optional[str] = None,
@@ -1025,6 +1026,7 @@ class DocVaultSDK:
             document_id: Document UUID
             file_input: File path, bytes, or binary stream
             agent_id: Agent UUID
+            change_description: Description of the change (default: "Content updated")
             create_version: Whether to create version before replacement
             filename: Optional filename override
             content_type: Optional MIME type override
@@ -1041,6 +1043,7 @@ class DocVaultSDK:
             document_id=document_id,
             file_input=file_input,
             agent_id=agent_id,
+            change_description=change_description,
             create_version=create_version,
             filename=filename,
             content_type=content_type,

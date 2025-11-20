@@ -63,7 +63,7 @@ async def test_basic_usage_v2():
                 agent_id=agent_id,
                 include_versions=True,
             )
-            print(f"[OK] Document details retrieved: {details['document']['name']}")
+            print(f"[OK] Document details retrieved: {details['name']}")
 
             # Test paginated listing
             result = await vault.list_documents_paginated(
@@ -72,7 +72,7 @@ async def test_basic_usage_v2():
                 limit=10,
                 offset=0,
             )
-            print(f"[OK] Document listing: {result['total_count']} documents")
+            print(f"[OK] Document listing: {result['pagination']['count']} documents")
 
             # Test bulk permissions
             agent2_id = uuid4()
@@ -86,7 +86,7 @@ async def test_basic_usage_v2():
             print(f"[OK] Second agent registered: {agent2.id}")
 
             permissions = [
-                {"agent_id": agent2_id, "permission": "read"},
+                {"agent_id": agent2_id, "permission": "READ"},
             ]
             acls = await vault.set_permissions_bulk(
                 document_id=document.id,
@@ -99,9 +99,11 @@ async def test_basic_usage_v2():
             check_result = await vault.check_permissions_multi(
                 document_id=document.id,
                 agent_id=agent2_id,
-                permissions=["read", "write"],
+                permissions=["READ", "WRITE"],
             )
-            print(f"[OK] Permission check: read={check_result['results']['read']}")
+            print(
+                f"[OK] Permission check: READ={check_result['permissions_checked']['READ']}"
+            )
 
             # Test content replacement
             new_content = b"Updated content"
@@ -111,7 +113,7 @@ async def test_basic_usage_v2():
                 agent_id=agent_id,
                 create_version=True,
             )
-            print(f"[OK] Content replaced: version {updated_doc.version}")
+            print(f"[OK] Content replaced: version {updated_doc.version_number}")
 
             print("\n" + "=" * 70)
             print("[SUCCESS] All v2.0 features tested successfully!")

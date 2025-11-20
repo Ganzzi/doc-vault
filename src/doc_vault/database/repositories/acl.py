@@ -58,7 +58,7 @@ class ACLRepository(BaseRepository[DocumentACL]):
         Convert DocumentACL model to database dict.
 
         Args:
-            model: DocumentACL instance
+            model: DocumentACL or DocumentACLCreate instance
 
         Returns:
             Dict suitable for database insertion/update
@@ -68,13 +68,16 @@ class ACLRepository(BaseRepository[DocumentACL]):
             "agent_id": model.agent_id,
             "permission": model.permission,
             "granted_by": model.granted_by,
-            "granted_at": model.granted_at,
             "expires_at": model.expires_at,
         }
 
         # Include ID if it exists (for updates)
         if hasattr(model, "id") and model.id:
             data["id"] = model.id
+
+        # Include granted_at only if it exists (DocumentACL, not DocumentACLCreate)
+        if hasattr(model, "granted_at") and model.granted_at:
+            data["granted_at"] = model.granted_at
 
         return data
 
