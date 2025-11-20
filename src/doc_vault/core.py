@@ -78,6 +78,17 @@ class DocVaultSDK:
             db_manager=self._db_manager,
         )
 
+        # Initialize organization and agent services (v2.0)
+        from doc_vault.services.organization_service import OrganizationService
+        from doc_vault.services.agent_service import AgentService
+
+        self._organization_service = OrganizationService(
+            db_manager=self._db_manager,
+        )
+        self._agent_service = AgentService(
+            db_manager=self._db_manager,
+        )
+
         self._initialized = True
         logger.info("DocVault SDK initialized successfully")
         return self
@@ -93,6 +104,8 @@ class DocVaultSDK:
         self._document_service = None
         self._access_service = None
         self._version_service = None
+        self._organization_service = None
+        self._agent_service = None
         self._initialized = False
         logger.info("DocVault SDK cleaned up successfully")
 
@@ -637,95 +650,72 @@ class DocVaultSDK:
     async def register_organization(
         self,
         external_id: str,
-        name: str,
+        name: str = None,  # v1.0 compatibility - ignored in v2.0
         metadata: Optional[Dict[str, Any]] = None,
     ):
         """
-        Register a new organization (idempotent).
+        Register a new organization (v2.0 compatible).
+
+        In v2.0, external_id is used as the UUID for the organization.
+        The 'name' parameter is kept for v1.0 compatibility but is ignored.
 
         Args:
-            external_id: External organization ID
-            name: Organization name
+            external_id: External organization UUID (string)
+            name: Deprecated in v2.0 (kept for compatibility)
             metadata: Optional custom metadata
 
         Returns:
             Organization: The organization
         """
-        if not self._db_manager:
+        if not self._organization_service:
             raise RuntimeError(
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
 
-        org_repo = OrganizationRepository(self._db_manager)
-
-        # Check if organization already exists
-        existing = await org_repo.get_by_external_id(external_id)
-        if existing:
-            return existing
-
-        # Create new organization
-        org_create = OrganizationCreate(
-            external_id=external_id,
-            name=name,
+        # Use v2.0 service
+        return await self._organization_service.register_organization(
+            org_id=external_id,
             metadata=metadata or {},
         )
-
-        return await org_repo.create_from_create_schema(org_create)
 
     async def register_agent(
         self,
         external_id: str,
         organization_id: str,
-        name: str,
-        email: Optional[str] = None,
-        agent_type: str = "human",
+        name: str = None,  # v1.0 compatibility - ignored in v2.0
+        email: Optional[str] = None,  # v1.0 compatibility - ignored in v2.0
+        agent_type: str = "human",  # v1.0 compatibility - ignored in v2.0
         metadata: Optional[Dict[str, Any]] = None,
     ):
         """
-        Register a new agent (idempotent).
+        Register a new agent (v2.0 compatible).
+
+        In v2.0, external_id is used as the UUID for the agent.
+        The 'name', 'email', and 'agent_type' parameters are kept for
+        v1.0 compatibility but are ignored.
 
         Args:
-            external_id: External agent ID
-            organization_id: Organization external ID
-            name: Agent name
-            email: Optional email
-            agent_type: 'human', 'ai', or 'service'
+            external_id: External agent UUID (string)
+            organization_id: Organization UUID (string)
+            name: Deprecated in v2.0 (kept for compatibility)
+            email: Deprecated in v2.0 (kept for compatibility)
+            agent_type: Deprecated in v2.0 (kept for compatibility)
             metadata: Optional custom metadata
 
         Returns:
             Agent: The agent
         """
-        if not self._db_manager:
+        if not self._agent_service:
             raise RuntimeError(
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
 
-        # First get the organization to get its UUID
-        org_repo = OrganizationRepository(self._db_manager)
-        org = await org_repo.get_by_external_id(organization_id)
-        if not org:
-            raise ValueError(
-                f"Organization with external_id '{organization_id}' not found"
-            )
-
-        agent_repo = AgentRepository(self._db_manager)
-
-        # Check if agent already exists
-        existing = await agent_repo.get_by_external_id(external_id)
-        if existing:
-            return existing
-
-        # Create new agent
-        agent_create = AgentCreate(
-            external_id=external_id,
-            organization_id=str(org.id),
-            name=name,
-            email=email,
-            agent_type=agent_type,
+        # Use v2.0 service
+        return await self._agent_service.register_agent(
+            agent_id=external_id,
+            organization_id=organization_id,
             metadata=metadata or {},
         )
-
-        return await agent_repo.create_from_create_schema(agent_create)
 
     async def get_organization(self, external_id: str):
         """
