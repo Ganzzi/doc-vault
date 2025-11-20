@@ -387,3 +387,116 @@ class AccessService:
         permissions = await self.acl_repo.get_by_document(document_id)
 
         return permissions
+
+    async def set_permissions(
+        self,
+        document_id: UUID | str,
+        permissions: List[dict],
+        granted_by: UUID | str,
+    ) -> List[DocumentACL]:
+        """
+        Set permissions for a document (v2.0 unified API).
+
+        v2.0: Bulk permission operation that replaces all existing permissions
+        with the provided list. This is more efficient than individual grant/revoke calls.
+
+        Args:
+            document_id: Document UUID
+            permissions: List of permission dicts:
+                {
+                    "agent_id": UUID or str,
+                    "permission": "READ" | "WRITE" | "DELETE" | "SHARE" | "ADMIN",
+                    "expires_at": Optional[datetime]
+                }
+            granted_by: Agent UUID granting the permissions (must have ADMIN)
+
+        Returns:
+            List of updated DocumentACL instances
+
+        Raises:
+            DocumentNotFoundError: If document doesn't exist
+            AgentNotFoundError: If agent doesn't exist or is invalid
+            PermissionDeniedError: If granter lacks ADMIN permission
+            ValidationError: If permissions format is invalid
+        """
+        try:
+            # Ensure UUIDs
+            document_id = self._ensure_uuid(document_id)
+            granted_by = self._ensure_uuid(granted_by)
+
+            # Check agent exists
+            await self._check_agent_exists(granted_by)
+
+            # Check document exists
+            await self._check_document_exists(document_id)
+
+            # Check that granter has ADMIN permission
+            has_permission = await self.acl_repo.check_permission(
+                document_id, granted_by, "ADMIN"
+            )
+            if not has_permission:
+                raise PermissionDeniedError(
+                    f"Agent {granted_by} does not have ADMIN permission for document {document_id}"
+                )
+
+            # Validate all permissions before making changes
+            for perm in permissions:
+                if "permission" not in perm:
+                    raise ValidationError(
+                        "Each permission must have 'permission' field"
+                    )
+                await self._validate_permission(perm["permission"])
+
+                if "agent_id" not in perm:
+                    raise ValidationError("Each permission must have 'agent_id' field")
+                agent_id = self._ensure_uuid(perm["agent_id"])
+                await self._check_agent_exists(agent_id)
+
+            # Use ACL repository's set_permissions method for bulk operation
+            result = await self.acl_repo.set_permissions(
+                document_id, permissions, granted_by
+            )
+
+            logger.info(
+                f"Set {len(permissions)} permissions for document {document_id} "
+                f"by agent {granted_by}"
+            )
+
+            return result
+
+        except (
+            DocumentNotFoundError,
+            AgentNotFoundError,
+            PermissionDeniedError,
+            ValidationError,
+        ):
+            raise
+        except Exception as e:
+            logger.error(f"Failed to set permissions for document {document_id}: {e}")
+            raise ValidationError(f"Failed to set permissions") from e
+
+    async def get_permissions(
+        self,
+        document_id: UUID | str,
+        agent_id: UUID | str,
+    ) -> List[DocumentACL]:
+        """
+        Get all permissions for a document (v2.0 unified API).
+
+        v2.0: Renamed from get_document_permissions for consistency with set_permissions.
+        Agent must have ADMIN permission to view all permissions.
+
+        Args:
+            document_id: Document UUID
+            agent_id: Agent UUID (must have ADMIN permission)
+
+        Returns:
+            List of DocumentACL instances for the document
+
+        Raises:
+            DocumentNotFoundError: If document doesn't exist
+            AgentNotFoundError: If agent doesn't exist
+            PermissionDeniedError: If agent lacks ADMIN permission
+        """
+        # Delegate to existing implementation
+        return await self.get_document_permissions(document_id, agent_id)

@@ -656,3 +656,271 @@ class DocumentService:
                 continue
 
         return accessible_docs
+
+    # v2.0 Methods - Document Management with Prefix Support
+
+    async def list_documents_by_prefix(
+        self,
+        organization_id: UUID | str,
+        agent_id: UUID | str,
+        prefix: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[Document]:
+        """
+        List documents under a specific hierarchical prefix (v2.0).
+
+        v2.0: Supports hierarchical document organization using prefixes.
+
+        Args:
+            organization_id: Organization UUID
+            agent_id: Agent UUID (requester)
+            prefix: Hierarchical prefix (e.g., '/reports/2025/q1/')
+            limit: Maximum number of documents to return
+            offset: Number of documents to skip
+
+        Returns:
+            List of Document instances under the prefix
+
+        Raises:
+            AgentNotFoundError: If agent doesn't exist
+            OrganizationNotFoundError: If organization doesn't exist
+            ValidationError: If parameters are invalid
+            PermissionDeniedError: If agent lacks access to organization
+        """
+        try:
+            organization_id = self._ensure_uuid(organization_id)
+            agent_id = self._ensure_uuid(agent_id)
+
+            # Verify organization and agent exist
+            await self._check_organization_exists(organization_id)
+            await self._check_agent_exists(agent_id)
+
+            if limit < 1 or limit > 1000:
+                raise ValidationError("limit must be between 1 and 1000")
+            if offset < 0:
+                raise ValidationError("offset must be >= 0")
+
+            # List documents by prefix
+            documents = await self.document_repo.list_by_prefix(
+                organization_id, prefix, limit, offset
+            )
+
+            # Filter by permissions (agent must have READ access)
+            accessible_docs = []
+            for doc in documents:
+                try:
+                    await self._check_permission(doc.id, agent_id, "READ")
+                    accessible_docs.append(doc)
+                except PermissionDeniedError:
+                    continue
+
+            return accessible_docs
+
+        except (AgentNotFoundError, OrganizationNotFoundError, ValidationError):
+            raise
+        except Exception as e:
+            logger.error(f"Failed to list documents by prefix: {e}")
+            raise ValidationError(f"Failed to list documents by prefix") from e
+
+    async def list_documents_recursive(
+        self,
+        organization_id: UUID | str,
+        agent_id: UUID | str,
+        prefix: str,
+        max_depth: Optional[int] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[Document]:
+        """
+        List documents recursively under a prefix with depth control (v2.0).
+
+        v2.0: Supports recursive listing with optional depth limit.
+
+        Args:
+            organization_id: Organization UUID
+            agent_id: Agent UUID (requester)
+            prefix: Starting prefix (e.g., '/reports/')
+            max_depth: Optional maximum depth (None = unlimited)
+            limit: Maximum number of documents to return
+            offset: Number of documents to skip
+
+        Returns:
+            List of Document instances recursively under the prefix
+
+        Raises:
+            AgentNotFoundError: If agent doesn't exist
+            OrganizationNotFoundError: If organization doesn't exist
+            ValidationError: If parameters are invalid
+        """
+        try:
+            organization_id = self._ensure_uuid(organization_id)
+            agent_id = self._ensure_uuid(agent_id)
+
+            # Verify organization and agent exist
+            await self._check_organization_exists(organization_id)
+            await self._check_agent_exists(agent_id)
+
+            if limit < 1 or limit > 1000:
+                raise ValidationError("limit must be between 1 and 1000")
+            if offset < 0:
+                raise ValidationError("offset must be >= 0")
+
+            # List documents recursively
+            documents = await self.document_repo.list_recursive(
+                organization_id, prefix, max_depth, limit, offset
+            )
+
+            # Filter by permissions
+            accessible_docs = []
+            for doc in documents:
+                try:
+                    await self._check_permission(doc.id, agent_id, "READ")
+                    accessible_docs.append(doc)
+                except PermissionDeniedError:
+                    continue
+
+            return accessible_docs
+
+        except (AgentNotFoundError, OrganizationNotFoundError, ValidationError):
+            raise
+        except Exception as e:
+            logger.error(f"Failed to list documents recursively: {e}")
+            raise ValidationError(f"Failed to list documents recursively") from e
+
+    async def upload_document_to_prefix(
+        self,
+        file_path: str | bytes | Any,
+        name: str,
+        organization_id: UUID | str,
+        agent_id: UUID | str,
+        prefix: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Document:
+        """
+        Upload a document with hierarchical prefix (v2.0).
+
+        v2.0: Supports uploading documents to hierarchical prefixes.
+
+        Args:
+            file_path: File path (str), bytes, or binary stream
+            name: Document display name
+            organization_id: Organization UUID
+            agent_id: Agent UUID (requester)
+            prefix: Optional hierarchical prefix (e.g., '/reports/2025/q1/')
+            description: Optional document description
+            tags: Optional list of tags
+            metadata: Optional additional metadata
+
+        Returns:
+            Created Document instance
+
+        Raises:
+            AgentNotFoundError: If agent doesn't exist
+            OrganizationNotFoundError: If organization doesn't exist
+            ValidationError: If parameters are invalid
+            StorageError: If storage operation fails
+        """
+        try:
+            organization_id = self._ensure_uuid(organization_id)
+            agent_id = self._ensure_uuid(agent_id)
+
+            # Verify organization and agent exist
+            await self._check_organization_exists(organization_id)
+            await self._check_agent_exists(agent_id)
+
+            # Validate prefix format if provided
+            if prefix:
+                if not prefix.startswith("/") or not prefix.endswith("/"):
+                    raise ValidationError("Prefix must start and end with /")
+
+            # Generate document ID if needed
+            document_id = uuid4()
+
+            # Determine file size and content type
+            if isinstance(file_path, str):
+                # File path
+                file_size = Path(file_path).stat().st_size
+                mime_type = (
+                    mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+                )
+                # Will read file during storage
+            elif isinstance(file_path, bytes):
+                file_size = len(file_path)
+                mime_type = "application/octet-stream"
+            else:
+                # Binary stream - try to get size
+                try:
+                    file_size = len(file_path.read())
+                    file_path.seek(0)  # Reset stream
+                except Exception:
+                    file_size = 0
+                mime_type = "application/octet-stream"
+
+            # Generate hierarchical path
+            if prefix:
+                path = f"{prefix}{name}"
+            else:
+                path = f"/{name}"
+
+            # Generate storage path
+            storage_path = self._generate_storage_path(document_id, 1, name)
+
+            # Create document
+            create_data = DocumentCreate(
+                id=document_id,
+                organization_id=organization_id,
+                name=name,
+                description=description,
+                filename=Path(file_path).name if isinstance(file_path, str) else name,
+                file_size=file_size,
+                mime_type=mime_type,
+                storage_path=storage_path,
+                prefix=prefix,
+                path=path,
+                created_by=agent_id,
+                updated_by=agent_id,
+                tags=tags or [],
+                metadata=metadata or {},
+            )
+
+            # Upload to storage
+            bucket_name = self._get_bucket_name(organization_id)
+            await self.storage_backend.put_object(bucket_name, storage_path, file_path)
+
+            # Create document in database
+            document = await self.document_repo.create(create_data)
+
+            # Create initial version
+            version_create = DocumentVersionCreate(
+                document_id=document.id,
+                version_number=1,
+                filename=document.filename,
+                file_size=document.file_size,
+                storage_path=storage_path,
+                mime_type=mime_type,
+                change_description="Initial version",
+                change_type="create",
+                created_by=agent_id,
+            )
+            await self.version_repo.create(version_create)
+
+            logger.info(
+                f"Uploaded document {document_id} to prefix '{prefix}' "
+                f"in organization {organization_id} by agent {agent_id}"
+            )
+
+            return document
+
+        except (
+            AgentNotFoundError,
+            OrganizationNotFoundError,
+            ValidationError,
+            StorageError,
+        ):
+            raise
+        except Exception as e:
+            logger.error(f"Failed to upload document to prefix: {e}")
+            raise StorageError(f"Failed to upload document") from e

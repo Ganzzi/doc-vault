@@ -54,7 +54,8 @@ dev = [
 docs = ["sphinx>=5.0", "sphinx-rtd-theme", "myst-parser"]
 test = ["pytest>=7.0,<8.0", "pytest-asyncio>=0.21,<1.0", "pytest-cov>=4.0,<5.0"]
 lint = ["black>=23.0,<24.0", "ruff>=0.1,<1.0", "mypy>=1.0,<2.0"]
-all = ["doc-vault[dev,docs,test,lint]"]
+all = ["docvault-sdk[dev,docs,test,lint]"]
+
 
 [project.urls]
 Homepage = "https://github.com/docvault/doc-vault"
