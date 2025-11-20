@@ -1290,3 +1290,331 @@ class DocumentService:
         except Exception as e:
             logger.error(f"Failed to upload document to prefix: {e}")
             raise StorageError(f"Failed to upload document") from e
+
+    # Phase 7: Document Listing & Retrieval
+
+    async def get_document_details(
+        self,
+        document_id: UUID | str,
+        agent_id: UUID | str,
+        include_versions: bool = True,
+        include_permissions: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive document details including version history and permissions (v2.0).
+
+        Retrieves complete document information with optional version history
+        and permission details.
+
+        Args:
+            document_id: Document UUID
+            agent_id: Agent UUID (requester)
+            include_versions: If True, include full version history
+            include_permissions: If True, include all permissions for document
+
+        Returns:
+            Dictionary with document details, versions, and optionally permissions
+
+        Raises:
+            DocumentNotFoundError: If document doesn't exist
+            PermissionDeniedError: If agent lacks READ permission
+            AgentNotFoundError: If agent doesn't exist
+        """
+        # Ensure UUIDs
+        document_id = self._ensure_uuid(document_id)
+        agent_id = self._ensure_uuid(agent_id)
+
+        # Check agent exists
+        await self._check_agent_exists(agent_id)
+
+        # Get document
+        document = await self._check_document_exists(document_id)
+
+        # Check read permission
+        await self._check_permission(document_id, agent_id, "READ")
+
+        # Build response
+        details = {
+            "id": str(document.id),
+            "name": document.name,
+            "description": document.description,
+            "filename": document.filename,
+            "file_size": document.file_size,
+            "mime_type": document.mime_type,
+            "status": document.status,
+            "organization_id": str(document.organization_id),
+            "created_by": str(document.created_by),
+            "created_at": document.created_at.isoformat(),
+            "updated_by": str(document.updated_by),
+            "updated_at": document.updated_at.isoformat(),
+            "current_version": document.current_version,
+            "tags": document.tags,
+            "metadata": document.metadata,
+            "prefix": document.prefix,
+            "path": document.path,
+        }
+
+        # Include version history if requested
+        if include_versions:
+            versions = await self.version_repo.get_by_document(document_id)
+            details["versions"] = [
+                {
+                    "version_number": v.version_number,
+                    "filename": v.filename,
+                    "file_size": v.file_size,
+                    "mime_type": v.mime_type,
+                    "storage_path": v.storage_path,
+                    "change_description": v.change_description,
+                    "change_type": v.change_type,
+                    "created_by": str(v.created_by),
+                    "created_at": v.created_at.isoformat(),
+                    "metadata": v.metadata,
+                }
+                for v in versions
+            ]
+
+        # Include permissions if requested
+        if include_permissions:
+            acls = await self.acl_repo.get_by_document(document_id)
+            details["permissions"] = [
+                {
+                    "agent_id": str(acl.agent_id),
+                    "permission": acl.permission,
+                    "granted_by": str(acl.granted_by),
+                    "granted_at": acl.granted_at.isoformat(),
+                    "expires_at": (
+                        acl.expires_at.isoformat() if acl.expires_at else None
+                    ),
+                }
+                for acl in acls
+            ]
+
+        logger.info(f"Retrieved document details: {document_id} for agent {agent_id}")
+        return details
+
+    async def list_documents_paginated(
+        self,
+        organization_id: UUID | str,
+        agent_id: UUID | str,
+        status: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        limit: int = 50,
+        offset: int = 0,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+    ) -> Dict[str, Any]:
+        """
+        List documents with comprehensive pagination and sorting (v2.0).
+
+        Enhanced listing with filtering, sorting, and pagination metadata.
+
+        Args:
+            organization_id: Organization UUID
+            agent_id: Agent UUID (requester)
+            status: Optional status filter (active, deleted, archived)
+            tags: Optional tag filter (all tags must match)
+            limit: Maximum documents per page (1-1000)
+            offset: Number of documents to skip
+            sort_by: Sort field (created_at, updated_at, name, file_size)
+            sort_order: Sort direction (asc, desc)
+
+        Returns:
+            Dictionary with documents list and pagination metadata
+
+        Raises:
+            AgentNotFoundError: If agent doesn't exist
+            OrganizationNotFoundError: If organization doesn't exist
+            ValidationError: If parameters are invalid
+        """
+        # Ensure UUIDs
+        organization_id = self._ensure_uuid(organization_id)
+        agent_id = self._ensure_uuid(agent_id)
+
+        # Validate inputs
+        if not (1 <= limit <= 1000):
+            raise ValidationError("limit must be between 1 and 1000")
+        if offset < 0:
+            raise ValidationError("offset must be >= 0")
+
+        allowed_sort_fields = {"created_at", "updated_at", "name", "file_size"}
+        if sort_by not in allowed_sort_fields:
+            raise ValidationError(f"sort_by must be one of {allowed_sort_fields}")
+
+        allowed_orders = {"asc", "desc"}
+        if sort_order not in allowed_orders:
+            raise ValidationError(f"sort_order must be one of {allowed_orders}")
+
+        # Check agent and organization exist
+        await self._check_agent_exists(agent_id)
+        await self._check_organization_exists(organization_id)
+
+        # Get documents
+        if tags:
+            documents = await self.document_repo.get_by_tags(
+                organization_id, tags, limit, offset
+            )
+        else:
+            documents = await self.document_repo.get_by_organization(
+                organization_id, status, limit, offset
+            )
+
+        # Filter by permissions
+        accessible_docs = []
+        for doc in documents:
+            try:
+                await self._check_permission(doc.id, agent_id, "READ")
+                accessible_docs.append(doc)
+            except PermissionDeniedError:
+                continue
+
+        # Convert to dictionaries
+        docs_list = [
+            {
+                "id": str(d.id),
+                "name": d.name,
+                "description": d.description,
+                "filename": d.filename,
+                "file_size": d.file_size,
+                "mime_type": d.mime_type,
+                "status": d.status,
+                "created_at": d.created_at.isoformat(),
+                "updated_at": d.updated_at.isoformat(),
+                "tags": d.tags,
+                "prefix": d.prefix,
+                "current_version": d.current_version,
+            }
+            for d in accessible_docs
+        ]
+
+        # Return with pagination metadata
+        return {
+            "documents": docs_list,
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "count": len(docs_list),
+                "total_available": len(accessible_docs),  # Approximate
+            },
+            "filters": {
+                "status": status,
+                "tags": tags,
+                "sort_by": sort_by,
+                "sort_order": sort_order,
+            },
+        }
+
+    async def search_documents_enhanced(
+        self,
+        query: str,
+        organization_id: UUID | str,
+        agent_id: UUID | str,
+        prefix: Optional[str] = None,
+        status: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """
+        Enhanced document search with filters (v2.0).
+
+        Search documents by query with optional filtering by prefix, status,
+        and tags.
+
+        Args:
+            query: Search query string
+            organization_id: Organization UUID
+            agent_id: Agent UUID (requester)
+            prefix: Optional prefix filter
+            status: Optional status filter
+            tags: Optional tag filter
+            limit: Maximum results (1-100)
+            offset: Number of results to skip
+
+        Returns:
+            Dictionary with search results and metadata
+
+        Raises:
+            AgentNotFoundError: If agent doesn't exist
+            OrganizationNotFoundError: If organization doesn't exist
+            ValidationError: If parameters are invalid
+        """
+        # Ensure UUIDs
+        organization_id = self._ensure_uuid(organization_id)
+        agent_id = self._ensure_uuid(agent_id)
+
+        # Validate inputs
+        if not query or len(query.strip()) < 2:
+            raise ValidationError("query must be at least 2 characters")
+        if not (1 <= limit <= 100):
+            raise ValidationError("limit must be between 1 and 100")
+        if offset < 0:
+            raise ValidationError("offset must be >= 0")
+
+        # Check agent and organization exist
+        await self._check_agent_exists(agent_id)
+        await self._check_organization_exists(organization_id)
+
+        # Search documents
+        documents = await self.document_repo.search_by_name(
+            organization_id, query, limit
+        )
+
+        # Apply additional filters
+        filtered_docs = []
+        for doc in documents:
+            # Filter by prefix if provided
+            if prefix and not (doc.prefix and doc.prefix.startswith(prefix)):
+                continue
+
+            # Filter by status if provided
+            if status and doc.status != status:
+                continue
+
+            # Filter by tags if provided
+            if tags and not all(tag in doc.tags for tag in tags):
+                continue
+
+            # Check permission
+            try:
+                await self._check_permission(doc.id, agent_id, "READ")
+                filtered_docs.append(doc)
+            except PermissionDeniedError:
+                continue
+
+        # Apply offset to results
+        final_results = filtered_docs[offset : offset + limit]
+
+        # Convert to dictionaries
+        results_list = [
+            {
+                "id": str(d.id),
+                "name": d.name,
+                "description": d.description,
+                "filename": d.filename,
+                "file_size": d.file_size,
+                "status": d.status,
+                "created_at": d.created_at.isoformat(),
+                "prefix": d.prefix,
+                "relevance_score": 1.0,  # TODO: implement actual relevance scoring
+            }
+            for d in final_results
+        ]
+
+        logger.info(
+            f"Enhanced search: {query} in org {organization_id} - {len(results_list)} results"
+        )
+        return {
+            "query": query,
+            "results": results_list,
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "count": len(results_list),
+                "total_matching": len(filtered_docs),
+            },
+            "filters": {
+                "prefix": prefix,
+                "status": status,
+                "tags": tags,
+            },
+        }

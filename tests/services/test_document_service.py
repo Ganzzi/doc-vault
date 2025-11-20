@@ -638,3 +638,267 @@ class TestEnhancedUpload:
                 agent_id=other_agent,
                 change_description="Unauthorized update",
             )
+
+
+# Phase 7: Document Listing & Retrieval Tests
+
+
+class TestDocumentDetails:
+    """Test get_document_details functionality."""
+
+    @pytest.mark.asyncio
+    async def test_get_document_details_basic(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+        temp_file: str,
+    ):
+        """Test retrieving basic document details."""
+        # Arrange - create a document
+        doc = await document_service.upload_document(
+            file_path=temp_file,
+            name="Test Document",
+            organization_id=test_org,
+            agent_id=test_agent,
+            description="Test description",
+            tags=["test"],
+        )
+
+        # Act
+        details = await document_service.get_document_details(
+            document_id=str(doc.id),
+            agent_id=test_agent,
+            include_versions=False,
+            include_permissions=False,
+        )
+
+        # Assert
+        assert details["id"] == str(doc.id)
+        assert details["name"] == "Test Document"
+        assert details["description"] == "Test description"
+        assert details["status"] == "active"
+        assert "created_at" in details
+        assert "updated_at" in details
+        assert "versions" not in details
+        assert "permissions" not in details
+
+    @pytest.mark.asyncio
+    async def test_get_document_details_with_versions(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+        temp_file: str,
+    ):
+        """Test document details including version history."""
+        # Arrange - create a document and add versions
+        doc = await document_service.upload_document(
+            file_path=temp_file,
+            name="Versioned Document",
+            organization_id=test_org,
+            agent_id=test_agent,
+        )
+
+        # Act
+        details = await document_service.get_document_details(
+            document_id=str(doc.id),
+            agent_id=test_agent,
+            include_versions=True,
+        )
+
+        # Assert
+        assert "versions" in details
+        assert len(details["versions"]) >= 1
+        assert details["versions"][0]["version_number"] == 1
+        assert details["versions"][0]["change_type"] == "create"
+
+    @pytest.mark.asyncio
+    async def test_get_document_details_permission_denied(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+        other_agent: str,
+        temp_file: str,
+    ):
+        """Test get_document_details fails without READ permission."""
+        # Arrange - create document
+        doc = await document_service.upload_document(
+            file_path=temp_file,
+            name="Protected Document",
+            organization_id=test_org,
+            agent_id=test_agent,
+        )
+
+        # Act & Assert
+        with pytest.raises(PermissionDeniedError):
+            await document_service.get_document_details(
+                document_id=str(doc.id),
+                agent_id=other_agent,
+            )
+
+
+class TestDocumentListing:
+    """Test enhanced document listing functionality."""
+
+    @pytest.mark.asyncio
+    async def test_list_documents_paginated(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+        temp_file: str,
+    ):
+        """Test paginated document listing."""
+        # Arrange - create multiple documents
+        for i in range(3):
+            await document_service.upload_document(
+                file_path=temp_file,
+                name=f"Document {i}",
+                organization_id=test_org,
+                agent_id=test_agent,
+            )
+
+        # Act
+        result = await document_service.list_documents_paginated(
+            organization_id=test_org,
+            agent_id=test_agent,
+            limit=10,
+            offset=0,
+        )
+
+        # Assert
+        assert "documents" in result
+        assert "pagination" in result
+        assert result["pagination"]["limit"] == 10
+        assert result["pagination"]["offset"] == 0
+        assert len(result["documents"]) >= 1
+
+    @pytest.mark.asyncio
+    async def test_list_documents_with_filters(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+        temp_file: str,
+    ):
+        """Test document listing with tag filters."""
+        # Arrange - create documents with different tags
+        await document_service.upload_document(
+            file_path=temp_file,
+            name="Tagged Document",
+            organization_id=test_org,
+            agent_id=test_agent,
+            tags=["important", "report"],
+        )
+
+        # Act
+        result = await document_service.list_documents_paginated(
+            organization_id=test_org,
+            agent_id=test_agent,
+            tags=["important"],
+            limit=10,
+        )
+
+        # Assert
+        assert "documents" in result
+        assert len(result["documents"]) >= 0
+
+    @pytest.mark.asyncio
+    async def test_list_documents_invalid_limit(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+    ):
+        """Test list_documents_paginated rejects invalid limit."""
+        # Act & Assert
+        with pytest.raises(ValidationError, match="limit must be between"):
+            await document_service.list_documents_paginated(
+                organization_id=test_org,
+                agent_id=test_agent,
+                limit=2000,  # Too high
+            )
+
+
+class TestDocumentSearch:
+    """Test enhanced search functionality."""
+
+    @pytest.mark.asyncio
+    async def test_search_documents_enhanced(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+        temp_file: str,
+    ):
+        """Test enhanced document search."""
+        # Arrange - create a document with searchable content
+        await document_service.upload_document(
+            file_path=temp_file,
+            name="Quarterly Report 2025",
+            organization_id=test_org,
+            agent_id=test_agent,
+            description="Q1 financial report",
+        )
+
+        # Act
+        result = await document_service.search_documents_enhanced(
+            query="Quarterly",
+            organization_id=test_org,
+            agent_id=test_agent,
+        )
+
+        # Assert
+        assert "results" in result
+        assert "pagination" in result
+        assert result["query"] == "Quarterly"
+        assert "filters" in result
+
+    @pytest.mark.asyncio
+    async def test_search_documents_with_prefix_filter(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+        temp_file: str,
+    ):
+        """Test search with prefix filtering."""
+        # Arrange - create document with prefix
+        await document_service.upload_document_to_prefix(
+            file_path=temp_file,
+            name="Report.pdf",
+            organization_id=test_org,
+            agent_id=test_agent,
+            prefix="/reports/2025/",
+        )
+
+        # Act
+        result = await document_service.search_documents_enhanced(
+            query="Report",
+            organization_id=test_org,
+            agent_id=test_agent,
+            prefix="/reports/",
+        )
+
+        # Assert
+        assert "results" in result
+        assert result["filters"]["prefix"] == "/reports/"
+
+    @pytest.mark.asyncio
+    async def test_search_documents_query_too_short(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+    ):
+        """Test search rejects query that's too short."""
+        # Act & Assert
+        with pytest.raises(ValidationError, match="query must be at least"):
+            await document_service.search_documents_enhanced(
+                query="a",  # Too short
+                organization_id=test_org,
+                agent_id=test_agent,
+            )
+
