@@ -501,4 +501,3 @@ class TestBulkPermissions:
                 to_agent_id=other_agent,
                 authorized_by=str(third_agent.id),
             )
-
