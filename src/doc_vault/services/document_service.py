@@ -5,11 +5,12 @@ Provides business logic for document operations including upload, download,
 metadata management, and search functionality.
 """
 
+import io
 import logging
 import mimetypes
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, BinaryIO, Dict, List, Optional, Union
 from uuid import UUID, uuid4
 
 from doc_vault.database.postgres_manager import PostgreSQLManager
@@ -81,6 +82,77 @@ class DocumentService:
     ) -> str:
         """Generate storage path for a document version."""
         return f"{document_id}/v{version_number}/{filename}"
+
+    def _extract_file_info(
+        self, file_input: Union[str, bytes, BinaryIO]
+    ) -> tuple[bytes, str, int]:
+        """
+        Extract file content, filename, and size from various input types.
+
+        Args:
+            file_input: File path (str), bytes, or binary stream
+
+        Returns:
+            Tuple of (file_content, filename, file_size)
+
+        Raises:
+            ValidationError: If input is invalid or unreadable
+        """
+        if isinstance(file_input, str):
+            # File path
+            if not os.path.exists(file_input):
+                raise ValidationError(f"File does not exist: {file_input}")
+            try:
+                file_path = Path(file_input)
+                file_size = file_path.stat().st_size
+                filename = file_path.name
+                with open(file_input, "rb") as f:
+                    file_content = f.read()
+                return file_content, filename, file_size
+            except Exception as e:
+                raise ValidationError(f"Failed to read file {file_input}: {e}")
+
+        elif isinstance(file_input, bytes):
+            # Bytes data
+            return file_input, "document", len(file_input)
+
+        elif isinstance(file_input, io.IOBase):
+            # Binary stream
+            try:
+                current_pos = file_input.tell()
+                file_input.seek(0, 2)  # Seek to end
+                file_size = file_input.tell()
+                file_input.seek(current_pos)  # Restore position
+                file_content = file_input.read()
+                file_input.seek(current_pos)  # Restore position again
+                return file_content, "document", file_size
+            except Exception as e:
+                raise ValidationError(f"Failed to read from stream: {e}")
+
+        else:
+            raise ValidationError(
+                f"Unsupported file input type: {type(file_input)}. "
+                f"Must be str (path), bytes, or BinaryIO"
+            )
+
+    def _detect_mime_type(self, filename: str, content: Optional[bytes] = None) -> str:
+        """
+        Detect MIME type from filename and optionally content.
+
+        Args:
+            filename: Original filename
+            content: Optional file content for magic detection
+
+        Returns:
+            MIME type string
+        """
+        # First try filename-based detection
+        mime_type, _ = mimetypes.guess_type(filename)
+        if mime_type:
+            return mime_type
+
+        # Could add magic detection here if needed
+        return "application/octet-stream"
 
     async def _check_agent_exists(self, agent_id: UUID | str) -> None:
         """Check if an agent exists."""
@@ -656,6 +728,300 @@ class DocumentService:
                 continue
 
         return accessible_docs
+
+    async def upload_enhanced(
+        self,
+        file_input: Union[str, bytes, BinaryIO],
+        name: str,
+        organization_id: UUID | str,
+        agent_id: UUID | str,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        content_type: Optional[str] = None,
+        filename: Optional[str] = None,
+    ) -> Document:
+        """
+        Upload a document with flexible input support (v2.0).
+
+        Supports multiple input types:
+        - str: File path to upload
+        - bytes: Raw file content
+        - BinaryIO: File-like object or stream
+
+        Args:
+            file_input: File path (str), bytes, or binary stream
+            name: Display name for the document
+            organization_id: Organization UUID
+            agent_id: Agent UUID (uploader)
+            description: Optional document description
+            tags: Optional list of tags
+            metadata: Optional custom metadata
+            content_type: Optional explicit MIME type (auto-detected if None)
+            filename: Optional override for filename (auto-detected from path/name)
+
+        Returns:
+            Created Document instance
+
+        Raises:
+            ValidationError: If input is invalid
+            AgentNotFoundError: If agent doesn't exist
+            OrganizationNotFoundError: If organization doesn't exist
+            StorageError: If upload fails
+        """
+        # Ensure UUIDs
+        organization_id = self._ensure_uuid(organization_id)
+        agent_id = self._ensure_uuid(agent_id)
+
+        # Validate agent and organization exist
+        await self._check_agent_exists(agent_id)
+        await self._check_organization_exists(organization_id)
+
+        # Extract file info
+        file_content, detected_filename, file_size = self._extract_file_info(file_input)
+
+        # Use provided filename or detected one
+        final_filename = filename or detected_filename
+        if not final_filename or final_filename == "document":
+            final_filename = f"{name}.bin"
+
+        # Determine MIME type
+        mime_type = content_type or self._detect_mime_type(final_filename, file_content)
+
+        # Generate document ID and storage path
+        document_id = uuid4()
+        bucket_name = self._get_bucket_name(organization_id)
+        storage_path = self._generate_storage_path(document_id, 1, final_filename)
+
+        # Ensure bucket exists
+        await self._ensure_bucket_exists(bucket_name)
+
+        # Create document record in transaction
+        create_data = DocumentCreate(
+            id=document_id,
+            organization_id=organization_id,
+            name=name,
+            description=description,
+            filename=final_filename,
+            file_size=file_size,
+            mime_type=mime_type,
+            storage_path=storage_path,
+            created_by=agent_id,
+            tags=tags or [],
+            metadata=metadata or {},
+        )
+
+        # Use transaction for atomicity
+        async with self.db_manager.connection() as conn:
+            async with conn.transaction():
+                # Create document in database
+                document = await self.document_repo.create_from_create_schema(
+                    create_data
+                )
+
+                # Upload file to storage
+                try:
+                    await self.storage_backend.upload(
+                        bucket_name, storage_path, file_content, mime_type
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to upload file to storage: {e}")
+                    raise StorageError(f"Failed to upload file: {e}") from e
+
+                # Grant ADMIN permission to creator
+                from doc_vault.database.schemas.acl import DocumentACLCreate
+
+                acl_create = DocumentACLCreate(
+                    document_id=document.id,
+                    agent_id=agent_id,
+                    permission="ADMIN",
+                    granted_by=agent_id,
+                )
+                await self.acl_repo.create_from_create_schema(acl_create)
+
+                # Create version record
+                version_create = DocumentVersionCreate(
+                    document_id=document.id,
+                    version_number=1,
+                    filename=final_filename,
+                    file_size=file_size,
+                    storage_path=storage_path,
+                    mime_type=mime_type,
+                    change_description="Initial upload",
+                    change_type="create",
+                    created_by=agent_id,
+                    metadata=metadata or {},
+                )
+                await self.version_repo.create_from_create_schema(version_create)
+
+        logger.info(f"Enhanced upload: {document.id} by agent {agent_id}")
+        return document
+
+    async def replace_document_content(
+        self,
+        document_id: UUID | str,
+        file_input: Union[str, bytes, BinaryIO],
+        agent_id: UUID | str,
+        change_description: str,
+        create_version: bool = True,
+        content_type: Optional[str] = None,
+        filename: Optional[str] = None,
+    ) -> DocumentVersion | Document:
+        """
+        Replace document content with flexible input support (v2.0).
+
+        Can optionally skip version creation and directly replace the content
+        of the current version (useful for file uploads that shouldn't create
+        historical versions).
+
+        Args:
+            document_id: Document UUID
+            file_input: File path (str), bytes, or binary stream
+            agent_id: Agent UUID (updater)
+            change_description: Description of the change
+            create_version: If True, create new version; if False, replace current
+            content_type: Optional explicit MIME type (auto-detected if None)
+            filename: Optional override for filename
+
+        Returns:
+            DocumentVersion if create_version=True, Document if False
+
+        Raises:
+            DocumentNotFoundError: If document doesn't exist
+            PermissionDeniedError: If agent lacks WRITE permission
+            ValidationError: If input is invalid
+            StorageError: If upload fails
+        """
+        # Ensure UUIDs
+        document_id = self._ensure_uuid(document_id)
+        agent_id = self._ensure_uuid(agent_id)
+
+        # Check agent exists
+        await self._check_agent_exists(agent_id)
+
+        # Get document
+        document = await self._check_document_exists(document_id)
+
+        # Check write permission
+        await self._check_permission(document_id, agent_id, "WRITE")
+
+        # Extract file info
+        file_content, detected_filename, file_size = self._extract_file_info(file_input)
+
+        # Use provided filename or detected one or keep original
+        final_filename = filename or detected_filename or document.filename
+        if final_filename == "document":
+            final_filename = document.filename
+
+        # Determine MIME type
+        mime_type = content_type or self._detect_mime_type(final_filename, file_content)
+
+        bucket_name = self._get_bucket_name(document.organization_id)
+
+        if create_version:
+            # Create new version (traditional behavior)
+            new_version_number = document.current_version + 1
+            new_storage_path = self._generate_storage_path(
+                document_id, new_version_number, final_filename
+            )
+
+            # Use transaction for atomicity
+            async with self.db_manager.connection() as conn:
+                async with conn.transaction():
+                    # Upload new version to storage
+                    try:
+                        await self.storage_backend.upload(
+                            bucket_name, new_storage_path, file_content, mime_type
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to upload new version to storage: {e}")
+                        raise StorageError(f"Failed to upload new version: {e}") from e
+
+                    # Update document with new version info
+                    doc_updates = {
+                        "current_version": new_version_number,
+                        "filename": final_filename,
+                        "file_size": file_size,
+                        "mime_type": mime_type,
+                        "storage_path": new_storage_path,
+                        "updated_by": agent_id,
+                    }
+                    await self.document_repo.update(document_id, doc_updates)
+
+                    # Create version record
+                    version_create = DocumentVersionCreate(
+                        document_id=document_id,
+                        version_number=new_version_number,
+                        filename=final_filename,
+                        file_size=file_size,
+                        storage_path=new_storage_path,
+                        mime_type=mime_type,
+                        change_description=change_description,
+                        change_type="update",
+                        created_by=agent_id,
+                        metadata=document.metadata or {},
+                    )
+                    version = await self.version_repo.create_from_create_schema(
+                        version_create
+                    )
+
+            logger.info(
+                f"Document replaced (v{new_version_number}): {document_id} by agent {agent_id}"
+            )
+            return version
+
+        else:
+            # Replace current version without creating new version
+            # Useful for file updates that shouldn't create history
+            storage_path = document.storage_path
+
+            async with self.db_manager.connection() as conn:
+                async with conn.transaction():
+                    # Delete old file from storage
+                    try:
+                        await self.storage_backend.delete(bucket_name, storage_path)
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to delete old version from storage: {e}"
+                        )
+
+                    # Upload new content to same location
+                    try:
+                        await self.storage_backend.upload(
+                            bucket_name, storage_path, file_content, mime_type
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to upload replacement file: {e}")
+                        raise StorageError(
+                            f"Failed to upload replacement file: {e}"
+                        ) from e
+
+                    # Update document metadata only
+                    doc_updates = {
+                        "filename": final_filename,
+                        "file_size": file_size,
+                        "mime_type": mime_type,
+                        "updated_by": agent_id,
+                    }
+                    updated_doc = await self.document_repo.update(
+                        document_id, doc_updates
+                    )
+
+                    # Update the current version record with new metadata
+                    version_updates = {
+                        "filename": final_filename,
+                        "file_size": file_size,
+                        "storage_path": storage_path,
+                        "mime_type": mime_type,
+                    }
+                    await self.version_repo.update(
+                        document.current_version, version_updates
+                    )
+
+            logger.info(
+                f"Document content replaced (no version): {document_id} by agent {agent_id}"
+            )
+            return updated_doc
 
     # v2.0 Methods - Document Management with Prefix Support
 

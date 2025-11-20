@@ -393,3 +393,248 @@ class TestDocumentService:
                     str(doc_to_delete.id)
                 )
                 assert doc is None
+
+
+# Phase 6: Enhanced Upload System Tests
+
+
+class TestEnhancedUpload:
+    """Test enhanced upload with flexible input support."""
+
+    @pytest.mark.asyncio
+    async def test_upload_enhanced_with_file_path(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+        temp_file: str,
+    ):
+        """Test enhanced upload with file path input."""
+        # Act
+        document = await document_service.upload_enhanced(
+            file_input=temp_file,
+            name="Enhanced File Path Upload",
+            organization_id=test_org,
+            agent_id=test_agent,
+            description="Upload via file path",
+            tags=["enhanced"],
+        )
+
+        # Assert
+        assert document.name == "Enhanced File Path Upload"
+        assert document.description == "Upload via file path"
+        assert document.status == "active"
+        assert document.current_version == 1
+        assert "enhanced" in document.tags
+
+    @pytest.mark.asyncio
+    async def test_upload_enhanced_with_bytes(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+    ):
+        """Test enhanced upload with bytes input."""
+        # Arrange
+        file_content = b"This is test content for bytes upload"
+
+        # Mock storage backend
+        with patch.object(
+            document_service.storage_backend, "upload", new_callable=AsyncMock
+        ) as mock_upload:
+            mock_upload.return_value = None
+
+            # Act
+            document = await document_service.upload_enhanced(
+                file_input=file_content,
+                name="Bytes Upload Test",
+                organization_id=test_org,
+                agent_id=test_agent,
+                filename="test_bytes.txt",
+                content_type="text/plain",
+            )
+
+            # Assert
+            assert document.name == "Bytes Upload Test"
+            assert document.filename == "test_bytes.txt"
+            assert document.file_size == len(file_content)
+            assert document.mime_type == "text/plain"
+            assert mock_upload.called
+
+    @pytest.mark.asyncio
+    async def test_upload_enhanced_with_binary_stream(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+    ):
+        """Test enhanced upload with binary stream input."""
+        # Arrange
+        import io
+
+        stream_content = b"Stream content for testing"
+        stream = io.BytesIO(stream_content)
+
+        with patch.object(
+            document_service.storage_backend, "upload", new_callable=AsyncMock
+        ) as mock_upload:
+            mock_upload.return_value = None
+
+            # Act
+            document = await document_service.upload_enhanced(
+                file_input=stream,
+                name="Stream Upload Test",
+                organization_id=test_org,
+                agent_id=test_agent,
+                filename="stream_test.bin",
+            )
+
+            # Assert
+            assert document.name == "Stream Upload Test"
+            assert document.file_size == len(stream_content)
+            assert mock_upload.called
+
+    @pytest.mark.asyncio
+    async def test_upload_enhanced_invalid_input_type(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+    ):
+        """Test enhanced upload rejects invalid input types."""
+        # Act & Assert
+        with pytest.raises(ValidationError, match="Unsupported file input type"):
+            await document_service.upload_enhanced(
+                file_input=12345,  # Invalid: not str, bytes, or BinaryIO
+                name="Invalid Input",
+                organization_id=test_org,
+                agent_id=test_agent,
+            )
+
+    @pytest.mark.asyncio
+    async def test_upload_enhanced_nonexistent_file(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+    ):
+        """Test enhanced upload fails with nonexistent file path."""
+        # Act & Assert
+        with pytest.raises(ValidationError, match="File does not exist"):
+            await document_service.upload_enhanced(
+                file_input="/nonexistent/path/to/file.txt",
+                name="Nonexistent File",
+                organization_id=test_org,
+                agent_id=test_agent,
+            )
+
+    @pytest.mark.asyncio
+    async def test_replace_document_create_version(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+        temp_file: str,
+    ):
+        """Test replace document with new version creation."""
+        # Arrange - create initial document
+        doc = await document_service.upload_document(
+            file_path=temp_file,
+            name="Document to Replace",
+            organization_id=test_org,
+            agent_id=test_agent,
+        )
+
+        # Create new file content
+        new_content = b"Replaced content"
+
+        with patch.object(
+            document_service.storage_backend, "upload", new_callable=AsyncMock
+        ):
+            # Act - replace with new version
+            version = await document_service.replace_document_content(
+                document_id=str(doc.id),
+                file_input=new_content,
+                agent_id=test_agent,
+                change_description="Updated with new content",
+                create_version=True,
+                content_type="application/octet-stream",
+                filename="replaced.bin",
+            )
+
+            # Assert
+            assert version.version_number == 2
+            assert version.change_description == "Updated with new content"
+            assert version.filename == "replaced.bin"
+            assert version.file_size == len(new_content)
+
+    @pytest.mark.asyncio
+    async def test_replace_document_no_version(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+        temp_file: str,
+    ):
+        """Test replace document without creating new version."""
+        # Arrange - create initial document
+        doc = await document_service.upload_document(
+            file_path=temp_file,
+            name="Document to Replace In-Place",
+            organization_id=test_org,
+            agent_id=test_agent,
+        )
+        initial_version = doc.current_version
+
+        # Create new file content
+        new_content = b"In-place replaced content"
+
+        with (
+            patch.object(
+                document_service.storage_backend, "delete", new_callable=AsyncMock
+            ),
+            patch.object(
+                document_service.storage_backend, "upload", new_callable=AsyncMock
+            ),
+        ):
+            # Act - replace without creating version
+            updated_doc = await document_service.replace_document_content(
+                document_id=str(doc.id),
+                file_input=new_content,
+                agent_id=test_agent,
+                change_description="In-place update",
+                create_version=False,
+                filename="updated.bin",
+            )
+
+            # Assert - version number shouldn't change
+            assert updated_doc.current_version == initial_version
+            assert updated_doc.filename == "updated.bin"
+            assert updated_doc.file_size == len(new_content)
+
+    @pytest.mark.asyncio
+    async def test_replace_document_permission_denied(
+        self,
+        document_service: DocumentService,
+        test_org: str,
+        test_agent: str,
+        other_agent: str,
+        temp_file: str,
+    ):
+        """Test replace document fails without WRITE permission."""
+        # Arrange - create document as test_agent
+        doc = await document_service.upload_document(
+            file_path=temp_file,
+            name="Protected Document",
+            organization_id=test_org,
+            agent_id=test_agent,
+        )
+
+        # Act & Assert - other_agent cannot write
+        with pytest.raises(PermissionDeniedError):
+            await document_service.replace_document_content(
+                document_id=str(doc.id),
+                file_input=b"New content",
+                agent_id=other_agent,
+                change_description="Unauthorized update",
+            )
