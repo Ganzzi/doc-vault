@@ -40,31 +40,33 @@ class TestDocVaultSDK:
     @pytest.mark.asyncio
     async def test_organization_agent_registration(self, config: Config):
         """Test organization and agent registration."""
-        org_external_id = f"test-org-{uuid4()}"
-        agent_external_id = f"test-agent-{uuid4()}"
+        org_external_id = str(uuid4())
+        agent_external_id = str(uuid4())
 
         async with DocVaultSDK(config=config) as sdk:
             # Register organization
             org = await sdk.register_organization(
                 external_id=org_external_id,
-                name="Test Organization",
+                name="Test Organization",  # v1.x compat, ignored in v2.0
                 metadata={"test": True},
             )
-            assert org.external_id == org_external_id
-            assert org.name == "Test Organization"
+            # In v2.0, external_id becomes the org.id
+            assert str(org.id) == org_external_id
+            assert org.metadata == {"test": True}
 
             # Register agent
             agent = await sdk.register_agent(
                 external_id=agent_external_id,
                 organization_id=org_external_id,
-                name="Test Agent",
-                email="test@example.com",
-                agent_type="human",
+                name="Test Agent",  # v1.x compat, ignored in v2.0
+                email="test@example.com",  # v1.x compat, ignored in v2.0
+                agent_type="human",  # v1.x compat, ignored in v2.0
                 metadata={"test": True},
             )
-            assert agent.external_id == agent_external_id
-            assert agent.name == "Test Agent"
-            assert agent.email == "test@example.com"
+            # In v2.0, external_id becomes the agent.id
+            assert str(agent.id) == agent_external_id
+            assert str(agent.organization_id) == org_external_id
+            assert agent.metadata == {"test": True}
 
             # Get organization
             retrieved_org = await sdk.get_organization(org_external_id)
@@ -77,8 +79,8 @@ class TestDocVaultSDK:
     @pytest.mark.asyncio
     async def test_document_lifecycle(self, config: Config, temp_file: str):
         """Test complete document lifecycle: upload, download, update, delete."""
-        org_external_id = f"test-org-{uuid4()}"
-        agent_external_id = f"test-agent-{uuid4()}"
+        org_external_id = str(uuid4())
+        agent_external_id = str(uuid4())
 
         async with DocVaultSDK(config=config) as sdk:
             # Register org and agent
@@ -93,7 +95,7 @@ class TestDocVaultSDK:
 
             # Upload document
             document = await sdk.upload(
-                file_path=temp_file,
+                file_input=temp_file,
                 name="Test Document",
                 organization_id=org_external_id,
                 agent_id=agent_external_id,
@@ -124,21 +126,24 @@ class TestDocVaultSDK:
             assert updated_doc.description == "Updated description"
             assert updated_doc.tags == ["test", "updated"]
 
-            # List documents
-            documents = await sdk.list_documents(
+            # List documents (v2.0 returns dict with 'documents' key)
+            result = await sdk.list_docs(
                 organization_id=org_external_id, agent_id=agent_external_id
             )
+            documents = result.get("documents", [])
             assert len(documents) >= 1
-            assert any(d.id == document.id for d in documents)
+            # documents are dicts in v2.0
+            assert any(str(d.get("id")) == str(document.id) for d in documents)
 
             # Search documents
-            search_results = await sdk.search(
+            search_response = await sdk.search(
                 query="test document",
                 organization_id=org_external_id,
                 agent_id=agent_external_id,
             )
+            search_results = search_response.get("results", [])
             assert len(search_results) >= 1
-            assert any(d.id == document.id for d in search_results)
+            assert any(str(d.get("id")) == str(document.id) for d in search_results)
 
             # Delete document (soft delete)
             await sdk.delete(
@@ -146,20 +151,23 @@ class TestDocVaultSDK:
             )
 
             # Document should be marked as deleted
-            documents_after = await sdk.list_documents(
+            result_after = await sdk.list_docs(
                 organization_id=org_external_id,
                 agent_id=agent_external_id,
                 status="active",
             )
-            assert not any(d.id == document.id for d in documents_after)
+            documents_after = result_after.get("documents", [])
+            assert not any(
+                str(d.get("id")) == str(document.id) for d in documents_after
+            )
 
     @pytest.mark.asyncio
     async def test_document_versioning(
         self, config: Config, temp_file: str, temp_file_v2: str
     ):
         """Test document versioning: upload, replace, restore."""
-        org_external_id = f"test-org-{uuid4()}"
-        agent_external_id = f"test-agent-{uuid4()}"
+        org_external_id = str(uuid4())
+        agent_external_id = str(uuid4())
 
         async with DocVaultSDK(config=config) as sdk:
             # Register org and agent
@@ -174,7 +182,7 @@ class TestDocVaultSDK:
 
             # Upload initial document
             document = await sdk.upload(
-                file_path=temp_file,
+                file_input=temp_file,
                 name="Version Test Document",
                 organization_id=org_external_id,
                 agent_id=agent_external_id,
@@ -184,26 +192,30 @@ class TestDocVaultSDK:
             # Replace document (creates version 2)
             new_version = await sdk.replace(
                 document_id=document.id,
-                file_path=temp_file_v2,
+                file_input=temp_file_v2,
                 agent_id=agent_external_id,
                 change_description="Updated content",
             )
             assert new_version.version_number == 2
 
             # Check document now points to version 2
-            updated_doc = await sdk.list_documents(
+            result = await sdk.list_docs(
                 organization_id=org_external_id, agent_id=agent_external_id
             )
-            doc = next(d for d in updated_doc if d.id == document.id)
-            assert doc.current_version == 2
+            updated_doc = result.get("documents", [])
+            doc = next(d for d in updated_doc if str(d.get("id")) == str(document.id))
+            assert doc.get("current_version") == 2
 
             # Get all versions
-            versions = await sdk.get_versions(
-                document_id=document.id, agent_id=agent_external_id
+            doc_details = await sdk.get_document_details(
+                document_id=document.id,
+                agent_id=agent_external_id,
+                include_versions=True,
             )
+            versions = doc_details.get("versions", [])
             assert len(versions) == 2
-            assert versions[0].version_number == 1
-            assert versions[1].version_number == 2
+            assert versions[0].get("version_number") == 1
+            assert versions[1].get("version_number") == 2
 
             # Download specific version
             old_content = await sdk.download(
@@ -221,18 +233,12 @@ class TestDocVaultSDK:
             assert restored.version_number == 3
             assert restored.change_type == "restore"
 
-            # Get version info
-            version_info = await sdk.get_version_info(
-                document_id=document.id, version_number=1, agent_id=agent_external_id
-            )
-            assert version_info.version_number == 1
-
     @pytest.mark.asyncio
     async def test_access_control(self, config: Config, temp_file: str):
         """Test access control: share, revoke, check permissions."""
-        org_external_id = f"test-org-{uuid4()}"
-        owner_external_id = f"test-owner-{uuid4()}"
-        user_external_id = f"test-user-{uuid4()}"
+        org_external_id = str(uuid4())
+        owner_external_id = str(uuid4())
+        user_external_id = str(uuid4())
 
         async with DocVaultSDK(config=config) as sdk:
             # Register org and agents
@@ -252,37 +258,54 @@ class TestDocVaultSDK:
 
             # Upload document as owner
             document = await sdk.upload(
-                file_path=temp_file,
+                file_input=temp_file,
                 name="Access Control Test",
                 organization_id=org_external_id,
                 agent_id=owner_external_id,
             )
 
             # Initially, user should not have access
-            has_access = await sdk.check_permission(
-                document_id=document.id, agent_id=user_external_id, permission="READ"
+            perms_response = await sdk.get_permissions(
+                document_id=document.id, agent_id=owner_external_id
             )
-            assert not has_access
+            user_perm = next(
+                (
+                    p
+                    for p in perms_response.get("permissions", [])
+                    if str(p.get("agent_id")) == str(user_external_id)
+                ),
+                None,
+            )
+            assert user_perm is None  # User not in permissions list
 
             # Share document with user
-            await sdk.share(
+            await sdk.set_permissions(
                 document_id=document.id,
-                agent_id=user_external_id,
-                permission="READ",
                 granted_by=owner_external_id,
+                permissions=[{"agent_id": str(user_external_id), "permission": "READ"}],
             )
 
             # Now user should have read access
-            has_access = await sdk.check_permission(
-                document_id=document.id, agent_id=user_external_id, permission="READ"
+            perms_response = await sdk.get_permissions(
+                document_id=document.id  # Don't filter by agent_id to see ALL permissions
             )
-            assert has_access
+            user_perm = next(
+                (
+                    p
+                    for p in perms_response.get("permissions", [])
+                    if str(p.get("agent_id")) == str(user_external_id)
+                ),
+                None,
+            )
+            assert user_perm is not None
+            assert user_perm.get("permission") == "READ"
 
             # User should be able to see document in accessible list
-            accessible_docs = await sdk.list_accessible_documents(
+            result = await sdk.list_docs(
                 agent_id=user_external_id, organization_id=org_external_id
             )
-            assert any(d.id == document.id for d in accessible_docs)
+            accessible_docs = result.get("documents", [])
+            assert any(str(d.get("id")) == str(document.id) for d in accessible_docs)
 
             # User should be able to download
             content = await sdk.download(
@@ -291,24 +314,38 @@ class TestDocVaultSDK:
             assert b"This is test content" in content
 
             # Get document permissions
-            permissions = await sdk.get_document_permissions(
-                document_id=document.id, agent_id=owner_external_id  # Owner has ADMIN
+            perms_response = await sdk.get_permissions(
+                document_id=document.id  # Get all permissions
             )
+            permissions = perms_response.get("permissions", [])
             assert len(permissions) >= 2  # Owner and user
 
-            # Revoke access
-            await sdk.revoke(
+            # Revoke access by explicitly removing the user's permission
+            await sdk.set_permissions(
                 document_id=document.id,
-                agent_id=user_external_id,
-                permission="READ",
-                revoked_by=owner_external_id,
+                granted_by=owner_external_id,
+                permissions=[
+                    {
+                        "agent_id": str(user_external_id),
+                        "permission": "READ",
+                        "action": "remove",
+                    }
+                ],
             )
 
             # User should no longer have access
-            has_access = await sdk.check_permission(
-                document_id=document.id, agent_id=user_external_id, permission="READ"
+            perms_response = await sdk.get_permissions(
+                document_id=document.id  # Get all permissions
             )
-            assert not has_access
+            user_perm = next(
+                (
+                    p
+                    for p in perms_response.get("permissions", [])
+                    if str(p.get("agent_id")) == str(user_external_id)
+                ),
+                None,
+            )
+            assert user_perm is None  # User removed from permissions
 
     @pytest.mark.asyncio
     async def test_error_handling(self, config: Config):
@@ -336,7 +373,7 @@ class TestDocVaultSDK:
 
         with pytest.raises(RuntimeError, match="SDK not initialized"):
             await sdk.upload(
-                file_path="/tmp/test.txt",
+                file_input="/tmp/test.txt",
                 name="Test",
                 organization_id="org-123",
                 agent_id="agent-456",

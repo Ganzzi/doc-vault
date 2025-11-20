@@ -18,34 +18,34 @@ from doc_vault.database.repositories.acl import ACLRepository
 from doc_vault.database.repositories.document import DocumentRepository
 from doc_vault.database.repositories.organization import OrganizationRepository
 from doc_vault.database.repositories.agent import AgentRepository
-from doc_vault.database.schemas.acl import ACL, ACLCreate
+from doc_vault.database.schemas.acl import DocumentACL, DocumentACLCreate
 from doc_vault.database.schemas.document import DocumentCreate
 from doc_vault.database.schemas.organization import OrganizationCreate
 from doc_vault.database.schemas.agent import AgentCreate
 
 
 @pytest.fixture
-async def acl_repo(postgres_manager):
+async def acl_repo(db_manager):
     """Create an ACL repository."""
-    return ACLRepository(postgres_manager)
+    return ACLRepository(db_manager)
 
 
 @pytest.fixture
-async def doc_repo(postgres_manager):
+async def doc_repo(db_manager):
     """Create a document repository."""
-    return DocumentRepository(postgres_manager)
+    return DocumentRepository(db_manager)
 
 
 @pytest.fixture
-async def org_repo(postgres_manager):
+async def org_repo(db_manager):
     """Create an organization repository."""
-    return OrganizationRepository(postgres_manager)
+    return OrganizationRepository(db_manager)
 
 
 @pytest.fixture
-async def agent_repo(postgres_manager):
+async def agent_repo(db_manager):
     """Create an agent repository."""
-    return AgentRepository(postgres_manager)
+    return AgentRepository(db_manager)
 
 
 @pytest.fixture
@@ -96,7 +96,7 @@ class TestACLCreate:
     async def test_grant_read_permission(self, acl_repo, document, agent1, agent2):
         """Test granting READ permission."""
         acl_id = uuid4()
-        create_data = ACLCreate(
+        create_data = DocumentACLCreate(
             id=acl_id,
             document_id=document.id,
             agent_id=agent2.id,
@@ -118,7 +118,7 @@ class TestACLCreate:
 
         for perm in permissions:
             acl_id = uuid4()
-            create_data = ACLCreate(
+            create_data = DocumentACLCreate(
                 id=acl_id,
                 document_id=document.id,
                 agent_id=agent2.id,
@@ -135,7 +135,7 @@ class TestACLCreate:
         acl_id = uuid4()
         expires_at = datetime.now(timezone.utc) + timedelta(days=7)
 
-        create_data = ACLCreate(
+        create_data = DocumentACLCreate(
             id=acl_id,
             document_id=document.id,
             agent_id=agent2.id,
@@ -155,7 +155,7 @@ class TestACLCreate:
         acl_id = uuid4()
         metadata = {"reason": "temporary_access", "requestor": "manager"}
 
-        create_data = ACLCreate(
+        create_data = DocumentACLCreate(
             id=acl_id,
             document_id=document.id,
             agent_id=agent2.id,
@@ -175,7 +175,7 @@ class TestACLGet:
     async def test_get_by_id(self, acl_repo, document, agent1, agent2):
         """Test getting ACL by ID."""
         acl_id = uuid4()
-        create_data = ACLCreate(
+        create_data = DocumentACLCreate(
             id=acl_id,
             document_id=document.id,
             agent_id=agent2.id,
@@ -195,7 +195,7 @@ class TestACLGet:
         # Grant multiple permissions
         for perm in ["READ", "WRITE", "DELETE"]:
             acl_id = uuid4()
-            create_data = ACLCreate(
+            create_data = DocumentACLCreate(
                 id=acl_id,
                 document_id=document.id,
                 agent_id=agent2.id,
@@ -233,7 +233,7 @@ class TestACLGet:
             created_doc = await doc_repo.create(doc_create)
 
             acl_id = uuid4()
-            acl_create = ACLCreate(
+            acl_create = DocumentACLCreate(
                 id=acl_id,
                 document_id=created_doc.id,
                 agent_id=agent2.id,
@@ -254,7 +254,7 @@ class TestACLCheckPermission:
     async def test_check_permission_granted(self, acl_repo, document, agent1, agent2):
         """Test checking permission that was granted."""
         acl_id = uuid4()
-        create_data = ACLCreate(
+        create_data = DocumentACLCreate(
             id=acl_id,
             document_id=document.id,
             agent_id=agent2.id,
@@ -273,7 +273,7 @@ class TestACLCheckPermission:
     ):
         """Test checking permission that was not granted."""
         acl_id = uuid4()
-        create_data = ACLCreate(
+        create_data = DocumentACLCreate(
             id=acl_id,
             document_id=document.id,
             agent_id=agent2.id,
@@ -292,7 +292,7 @@ class TestACLCheckPermission:
     async def test_check_admin_inherits_all(self, acl_repo, document, agent1, agent2):
         """Test that ADMIN permission implies all others."""
         acl_id = uuid4()
-        create_data = ACLCreate(
+        create_data = DocumentACLCreate(
             id=acl_id,
             document_id=document.id,
             agent_id=agent2.id,
@@ -316,7 +316,7 @@ class TestACLDelete:
     async def test_delete_permission(self, acl_repo, document, agent1, agent2):
         """Test deleting a permission."""
         acl_id = uuid4()
-        create_data = ACLCreate(
+        create_data = DocumentACLCreate(
             id=acl_id,
             document_id=document.id,
             agent_id=agent2.id,
@@ -349,7 +349,7 @@ class TestACLBulkOperations:
 
         for perm, agent_id in permissions_to_grant:
             acl_id = uuid4()
-            create_data = ACLCreate(
+            create_data = DocumentACLCreate(
                 id=acl_id,
                 document_id=document.id,
                 agent_id=agent_id,
@@ -379,3 +379,4 @@ class TestACLBulkOperations:
 
         # Should have exactly the new permissions (or at least include them)
         assert len(acls) >= len(new_permissions)
+

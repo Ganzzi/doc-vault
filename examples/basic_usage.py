@@ -1,22 +1,30 @@
 """
-Basic usage example for DocVault SDK.
+Basic usage example for DocVault SDK v2.0.
 
 This example demonstrates the core functionality of the DocVault SDK:
-- Organization and agent registration
+- Organization and agent registration (with UUID external_id)
 - Document upload and download
-- Access control (sharing and permissions)
-- Document versioning
+- Access control (unified set_permissions/get_permissions API)
+- Document versioning (get_document_details with include_versions)
+
+Note: In v2.0, external_id for organizations and agents must be valid UUIDs.
 """
 
 import asyncio
 import tempfile
 from pathlib import Path
+import uuid
 
 from doc_vault import DocVaultSDK
 
 
 async def main():
     """Main example function."""
+    # Generate UUIDs for this example
+    org_id = str(uuid.uuid4())
+    agent1_id = str(uuid.uuid4())
+    agent2_id = str(uuid.uuid4())
+
     # Create a temporary file for the example
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
         f.write("This is a sample document for DocVault SDK demonstration.")
@@ -25,59 +33,57 @@ async def main():
     try:
         # Initialize the SDK (uses environment variables from .env file)
         async with DocVaultSDK() as vault:
-            print("🚀 DocVault SDK initialized successfully!")
+            print("DocVault SDK initialized successfully!")
 
             # 1. Register organization and agent
-            print("\n📝 Registering organization and agent...")
+            print("\nRegistering organization and agent...")
 
             org = await vault.register_organization(
-                external_id="example-org-001",
+                external_id=org_id,
                 name="Example Corporation",
                 metadata={"industry": "technology", "size": "startup"},
             )
-            print(f"✅ Organization registered: {org.name} (ID: {org.id})")
+            print(f"Organization registered: {org.id}")
 
             agent = await vault.register_agent(
-                external_id="example-agent-001",
-                organization_id="example-org-001",
+                external_id=agent1_id,
+                organization_id=org_id,
                 name="John Doe",
                 email="john.doe@example.com",
                 agent_type="human",
-                metadata={"role": "developer", "department": "engineering"},
+                metadata={"role": "administrator", "department": "IT"},
             )
-            print(f"✅ Agent registered: {agent.name} (ID: {agent.id})")
+            print(f"Agent registered: {agent.id}")
 
             # 2. Upload a document
-            print("\n📤 Uploading document...")
+            print("\nUploading document...")
 
             document = await vault.upload(
-                file_path=temp_file_path,
+                file_input=temp_file_path,
                 name="Sample Document",
-                organization_id="example-org-001",
-                agent_id="example-agent-001",
+                organization_id=org_id,
+                agent_id=agent1_id,
                 description="A sample document for demonstration",
                 tags=["sample", "demo", "documentation"],
                 metadata={"version": "1.0", "confidential": False},
             )
-            print(f"✅ Document uploaded: {document.name} (ID: {document.id})")
+            print(f"Document uploaded: {document.name} (ID: {document.id})")
             print(f"   File size: {document.file_size} bytes")
             print(f"   Current version: {document.current_version}")
 
             # 3. Download the document
-            print("\n📥 Downloading document...")
+            print("\nDownloading document...")
 
-            content = await vault.download(
-                document_id=document.id, agent_id="example-agent-001"
-            )
-            print(f"✅ Document downloaded: {len(content)} bytes")
+            content = await vault.download(document_id=document.id, agent_id=agent1_id)
+            print(f"Document downloaded: {len(content)} bytes")
             print(f"   Content preview: {content.decode()[:50]}...")
 
             # 4. Update document metadata
-            print("\n✏️  Updating document metadata...")
+            print("\nUpdating document metadata...")
 
             updated_doc = await vault.update_metadata(
                 document_id=document.id,
-                agent_id="example-agent-001",
+                agent_id=agent1_id,
                 name="Updated Sample Document",
                 description="Updated description with more details",
                 tags=["sample", "demo", "documentation", "updated"],
@@ -87,74 +93,86 @@ async def main():
                     "last_reviewed": "2025-01-15",
                 },
             )
-            print(f"✅ Document metadata updated: {updated_doc.name}")
+            print(f"Document metadata updated: {updated_doc.name}")
 
-            # 5. List documents
-            print("\n📋 Listing documents...")
+            # 5. List documents (v2.0 method)
+            print("\nListing documents...")
 
-            documents = await vault.list_documents(
-                organization_id="example-org-001",
-                agent_id="example-agent-001",
+            result = await vault.list_docs(
+                organization_id=org_id,
+                agent_id=agent1_id,
                 limit=10,
             )
-            print(f"✅ Found {len(documents)} document(s)")
+            documents = result.get("documents", [])
+            print(f"Found {len(documents)} document(s)")
             for doc in documents:
-                print(f"   - {doc.name} (ID: {doc.id}, Status: {doc.status})")
+                print(
+                    f"   - {doc.get('name')} (ID: {doc.get('id')}, Status: {doc.get('status')})"
+                )
 
             # 6. Search documents
-            print("\n🔍 Searching documents...")
+            print("\nSearching documents...")
 
             search_results = await vault.search(
                 query="sample document",
-                organization_id="example-org-001",
-                agent_id="example-agent-001",
+                organization_id=org_id,
+                agent_id=agent1_id,
             )
-            print(f"✅ Search found {len(search_results)} document(s)")
-            for doc in search_results:
-                print(f"   - {doc.name} (ID: {doc.id})")
+            results = search_results.get("results", [])
+            print(f"Search found {len(results)} document(s)")
+            for doc in results:
+                print(f"   - {doc.get('name')} (ID: {doc.get('id')})")
 
-            # 7. Demonstrate access control
-            print("\n🔐 Demonstrating access control...")
+            # 7. Demonstrate access control (v2.0 API)
+            print("\nDemonstrating access control...")
 
             # Register another agent
             other_agent = await vault.register_agent(
-                external_id="example-agent-002",
-                organization_id="example-org-001",
+                external_id=agent2_id,
+                organization_id=org_id,
                 name="Jane Smith",
                 email="jane.smith@example.com",
                 agent_type="human",
             )
-            print(f"✅ Second agent registered: {other_agent.name}")
+            print(f"Second agent registered: {other_agent.id}")
 
-            # Initially, the second agent cannot access the document
-            has_access = await vault.check_permission(
-                document_id=document.id, agent_id="example-agent-002", permission="READ"
+            # Check initial permissions (should be empty for agent2)
+            print("\nChecking Agent 2's initial permissions...")
+            perms_result = await vault.get_permissions(
+                document_id=document.id, agent_id=agent2_id
             )
-            print(f"❌ Agent 2 has READ permission: {has_access}")
+            perms_list = perms_result.get("permissions", [])
+            print(f"   Agent 2 has {len(perms_list)} permissions")
 
-            # Share the document with the second agent
-            await vault.share(
+            # Grant READ permission to the second agent (v2.0 API)
+            await vault.set_permissions(
                 document_id=document.id,
-                agent_id="example-agent-002",
-                permission="READ",
-                granted_by="example-agent-001",
+                permissions=[
+                    {
+                        "agent_id": agent2_id,
+                        "permission": "READ",
+                    },
+                ],
+                granted_by=agent1_id,
             )
-            print("✅ Document shared with Agent 2 (READ permission)")
+            print("Document shared with Agent 2 (READ permission)")
 
-            # Now the second agent can access it
-            has_access = await vault.check_permission(
-                document_id=document.id, agent_id="example-agent-002", permission="READ"
+            # Now the second agent has access
+            perms_result = await vault.get_permissions(
+                document_id=document.id, agent_id=agent2_id
             )
-            print(f"✅ Agent 2 has READ permission: {has_access}")
+            perms_list = perms_result.get("permissions", [])
+            print(f"Agent 2 now has {len(perms_list)} permission(s):")
+            for p in perms_list:
+                print(f"   - {p['permission']}")
 
-            # Second agent can now see the document in their accessible list
-            accessible_docs = await vault.list_accessible_documents(
-                agent_id="example-agent-002", organization_id="example-org-001"
-            )
-            print(f"✅ Agent 2 can access {len(accessible_docs)} document(s)")
+            # Second agent can now see the document in list_docs
+            result = await vault.list_docs(agent_id=agent2_id, organization_id=org_id)
+            accessible_docs = result.get("documents", [])
+            print(f"Agent 2 can access {len(accessible_docs)} document(s)")
 
-            # 8. Demonstrate versioning
-            print("\n📚 Demonstrating document versioning...")
+            # 8. Demonstrate versioning (v2.0 API)
+            print("\nDemonstrating document versioning...")
 
             # Create a new version of the file
             with tempfile.NamedTemporaryFile(
@@ -169,42 +187,43 @@ async def main():
                 # Replace the document (creates version 2)
                 new_version = await vault.replace(
                     document_id=document.id,
-                    file_path=updated_file_path,
-                    agent_id="example-agent-001",
+                    file_input=updated_file_path,  # v2.0 uses file_input
+                    agent_id=agent1_id,
                     change_description="Updated content with new information",
                 )
-                print(f"✅ New version created: Version {new_version.version_number}")
+                print(f"New version created: Version {new_version.version_number}")
 
-                # List all versions
-                versions = await vault.get_versions(
-                    document_id=document.id, agent_id="example-agent-001"
+                # Get document details with version history (v2.0 API)
+                details = await vault.get_document_details(
+                    document_id=document.id, agent_id=agent1_id, include_versions=True
                 )
-                print(f"✅ Document has {len(versions)} version(s)")
+                versions = details.get("versions", [])
+                print(f"Document has {len(versions)} version(s)")
                 for v in versions:
                     print(
-                        f"   - Version {v.version_number}: {v.change_description or 'Initial upload'}"
+                        f"   - Version {v.get('version_number')}: {v.get('change_description') or 'Initial upload'}"
                     )
 
                 # Download a specific version
                 old_content = await vault.download(
                     document_id=document.id,
-                    agent_id="example-agent-001",
+                    agent_id=agent1_id,
                     version=1,  # Original version
                 )
-                print(f"✅ Downloaded version 1: {len(old_content)} bytes")
+                print(f"Downloaded version 1: {len(old_content)} bytes")
                 print(f"   Original content preview: {old_content.decode()[:50]}...")
 
             finally:
                 Path(updated_file_path).unlink(missing_ok=True)
 
-            print("\n🎉 DocVault SDK demonstration completed successfully!")
+            print("\nDocVault SDK v2.0 demonstration completed successfully!")
             print("\nKey features demonstrated:")
-            print("  ✅ Organization and agent management")
-            print("  ✅ Document upload/download")
-            print("  ✅ Metadata management")
-            print("  ✅ Access control and sharing")
-            print("  ✅ Document versioning")
-            print("  ✅ Search functionality")
+            print("  - Organization and agent management")
+            print("  - Document upload/download")
+            print("  - Metadata management")
+            print("  - Access control with set_permissions/get_permissions")
+            print("  - Document versioning with get_document_details")
+            print("  - Search functionality")
 
     finally:
         # Clean up temporary file

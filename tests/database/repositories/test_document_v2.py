@@ -23,21 +23,21 @@ from doc_vault.exceptions import DatabaseError
 
 
 @pytest.fixture
-async def doc_repo(postgres_manager):
+async def doc_repo(db_manager):
     """Create a document repository."""
-    return DocumentRepository(postgres_manager)
+    return DocumentRepository(db_manager)
 
 
 @pytest.fixture
-async def org_repo(postgres_manager):
+async def org_repo(db_manager):
     """Create an organization repository."""
-    return OrganizationRepository(postgres_manager)
+    return OrganizationRepository(db_manager)
 
 
 @pytest.fixture
-async def agent_repo(postgres_manager):
+async def agent_repo(db_manager):
     """Create an agent repository."""
-    return AgentRepository(postgres_manager)
+    return AgentRepository(db_manager)
 
 
 @pytest.fixture
@@ -450,3 +450,4 @@ class TestDocumentDelete:
         # Document should not exist
         doc = await doc_repo.get_by_id(doc_id)
         assert doc is None
+

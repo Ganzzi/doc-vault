@@ -21,15 +21,15 @@ from doc_vault.exceptions import DatabaseError
 
 
 @pytest.fixture
-async def agent_repo(postgres_manager):
+async def agent_repo(db_manager):
     """Create an agent repository."""
-    return AgentRepository(postgres_manager)
+    return AgentRepository(db_manager)
 
 
 @pytest.fixture
-async def org_repo(postgres_manager):
+async def org_repo(db_manager):
     """Create an organization repository."""
-    return OrganizationRepository(postgres_manager)
+    return OrganizationRepository(db_manager)
 
 
 @pytest.fixture
@@ -305,3 +305,4 @@ class TestAgentErrors:
         # Should raise error due to foreign key constraint
         with pytest.raises(Exception):
             await agent_repo.create(create_data)
+

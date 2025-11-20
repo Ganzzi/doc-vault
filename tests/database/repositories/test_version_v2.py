@@ -16,34 +16,34 @@ from doc_vault.database.repositories.version import VersionRepository
 from doc_vault.database.repositories.document import DocumentRepository
 from doc_vault.database.repositories.organization import OrganizationRepository
 from doc_vault.database.repositories.agent import AgentRepository
-from doc_vault.database.schemas.version import Version, VersionCreate
+from doc_vault.database.schemas.version import DocumentVersion, DocumentVersionCreate
 from doc_vault.database.schemas.document import DocumentCreate
 from doc_vault.database.schemas.organization import OrganizationCreate
 from doc_vault.database.schemas.agent import AgentCreate
 
 
 @pytest.fixture
-async def version_repo(postgres_manager):
+async def version_repo(db_manager):
     """Create a version repository."""
-    return VersionRepository(postgres_manager)
+    return VersionRepository(db_manager)
 
 
 @pytest.fixture
-async def doc_repo(postgres_manager):
+async def doc_repo(db_manager):
     """Create a document repository."""
-    return DocumentRepository(postgres_manager)
+    return DocumentRepository(db_manager)
 
 
 @pytest.fixture
-async def org_repo(postgres_manager):
+async def org_repo(db_manager):
     """Create an organization repository."""
-    return OrganizationRepository(postgres_manager)
+    return OrganizationRepository(db_manager)
 
 
 @pytest.fixture
-async def agent_repo(postgres_manager):
+async def agent_repo(db_manager):
     """Create an agent repository."""
-    return AgentRepository(postgres_manager)
+    return AgentRepository(db_manager)
 
 
 @pytest.fixture
@@ -86,7 +86,7 @@ class TestVersionCreate:
     async def test_create_version(self, version_repo, document, agent):
         """Test creating a version."""
         version_id = uuid4()
-        create_data = VersionCreate(
+        create_data = DocumentVersionCreate(
             id=version_id,
             document_id=document.id,
             version_number=1,
@@ -108,7 +108,7 @@ class TestVersionCreate:
         version_ids = []
         for i in range(1, 4):
             version_id = uuid4()
-            create_data = VersionCreate(
+            create_data = DocumentVersionCreate(
                 id=version_id,
                 document_id=document.id,
                 version_number=i,
@@ -132,7 +132,7 @@ class TestVersionGet:
     async def test_get_by_id(self, version_repo, document, agent):
         """Test getting a version by ID."""
         version_id = uuid4()
-        create_data = VersionCreate(
+        create_data = DocumentVersionCreate(
             id=version_id,
             document_id=document.id,
             version_number=1,
@@ -154,7 +154,7 @@ class TestVersionGet:
         # Create multiple versions
         for i in range(1, 4):
             version_id = uuid4()
-            create_data = VersionCreate(
+            create_data = DocumentVersionCreate(
                 id=version_id,
                 document_id=document.id,
                 version_number=i,
@@ -178,7 +178,7 @@ class TestVersionGet:
         # Create multiple versions
         for i in range(1, 6):
             version_id = uuid4()
-            create_data = VersionCreate(
+            create_data = DocumentVersionCreate(
                 id=version_id,
                 document_id=document.id,
                 version_number=i,
@@ -207,7 +207,7 @@ class TestVersionDelete:
     async def test_delete_version(self, version_repo, document, agent):
         """Test deleting a version."""
         version_id = uuid4()
-        create_data = VersionCreate(
+        create_data = DocumentVersionCreate(
             id=version_id,
             document_id=document.id,
             version_number=1,
@@ -232,7 +232,7 @@ class TestVersionUpdate:
     async def test_update_change_description(self, version_repo, document, agent):
         """Test updating version change description."""
         version_id = uuid4()
-        create_data = VersionCreate(
+        create_data = DocumentVersionCreate(
             id=version_id,
             document_id=document.id,
             version_number=1,
@@ -251,3 +251,4 @@ class TestVersionUpdate:
 
         assert updated is not None
         assert updated.change_description == "Updated description"
+

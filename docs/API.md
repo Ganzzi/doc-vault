@@ -1,22 +1,34 @@
-# DocVault SDK API Reference
+# DocVault SDK v2.0 API Reference
 
-Complete API reference for the DocVault SDK.
+Complete API reference for DocVault SDK v2.0.
+
+**Major Changes from v1.x:**
+- UUID-based entity model (organizations & agents use external UUIDs as primary keys)
+- Hierarchical document organization with prefix support
+- Unified permissions API (`get_permissions` / `set_permissions`)
+- Enhanced upload system (file paths, bytes, streams)
+- Comprehensive document details retrieval
+- See [BREAKING_CHANGES.md](./plan/v2/BREAKING_CHANGES.md) for migration guide
+
+---
 
 ## Table of Contents
 
 - [Initialization](#initialization)
-- [Document Operations](#document-operations)
-- [Access Control](#access-control)
-- [Version Management](#version-management)
 - [Organization & Agent Management](#organization--agent-management)
+- [Document Operations](#document-operations)
+- [Access Control & Permissions](#access-control--permissions)
+- [Version Management](#version-management)
 - [Configuration](#configuration)
 - [Exceptions](#exceptions)
+
+---
 
 ## Initialization
 
 ### DocVaultSDK
 
-The main SDK class that provides all document management functionality.
+The main SDK class providing all document management functionality.
 
 ```python
 from doc_vault import DocVaultSDK
@@ -35,446 +47,6 @@ config = Config(
     postgres_user="postgres",
     postgres_password="password",
     postgres_db="doc_vault",
-    minio_endpoint="localhost:9000",
-    minio_access_key="minioadmin",
-    minio_secret_key="minioadmin"
-)
-
-async with DocVaultSDK(config=config) as vault:
-    # Use vault...
-    pass
-```
-
-## Document Operations
-
-### upload()
-
-Upload a document to the system.
-
-```python
-async def upload(
-    file_path: str,
-    name: str,
-    organization_id: str,
-    agent_id: str,
-    description: Optional[str] = None,
-    tags: Optional[List[str]] = None,
-    metadata: Optional[Dict[str, Any]] = None,
-) -> Document
-```
-
-**Parameters:**
-- `file_path` (str): Path to the file to upload
-- `name` (str): Display name for the document
-- `organization_id` (str): Organization external ID
-- `agent_id` (str): Agent external ID (uploader)
-- `description` (Optional[str]): Optional description
-- `tags` (Optional[List[str]]): Optional list of tags
-- `metadata` (Optional[Dict[str, Any]]): Optional custom metadata
-
-**Returns:** `Document` - The created document object
-
-**Raises:** `AgentNotFoundError`, `OrganizationNotFoundError`, `FileNotFoundError`
-
-### download()
-
-Download a document.
-
-```python
-async def download(
-    document_id: UUID,
-    agent_id: str,
-    version: Optional[int] = None,
-) -> bytes
-```
-
-**Parameters:**
-- `document_id` (UUID): Document UUID
-- `agent_id` (str): Agent external ID (requester)
-- `version` (Optional[int]): Optional version number (None = current)
-
-**Returns:** `bytes` - The document content
-
-**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
-
-### update_metadata()
-
-Update document metadata.
-
-```python
-async def update_metadata(
-    document_id: UUID,
-    agent_id: str,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
-    tags: Optional[List[str]] = None,
-    metadata: Optional[Dict[str, Any]] = None,
-) -> Document
-```
-
-**Parameters:**
-- `document_id` (UUID): Document UUID
-- `agent_id` (str): Agent external ID (updater)
-- `name` (Optional[str]): New name
-- `description` (Optional[str]): New description
-- `tags` (Optional[List[str]]): New tags
-- `metadata` (Optional[Dict[str, Any]]): New metadata
-
-**Returns:** `Document` - Updated document
-
-**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
-
-### replace()
-
-Replace document content (creates new version).
-
-```python
-async def replace(
-    document_id: UUID,
-    file_path: str,
-    agent_id: str,
-    change_description: str,
-) -> DocumentVersion
-```
-
-**Parameters:**
-- `document_id` (UUID): Document UUID
-- `file_path` (str): Path to new file content
-- `agent_id` (str): Agent external ID (updater)
-- `change_description` (str): Description of the change
-
-**Returns:** `DocumentVersion` - The new version
-
-**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
-
-### delete()
-
-Delete a document.
-
-```python
-async def delete(
-    document_id: UUID,
-    agent_id: str,
-    hard_delete: bool = False,
-) -> None
-```
-
-**Parameters:**
-- `document_id` (UUID): Document UUID
-- `agent_id` (str): Agent external ID (deleter)
-- `hard_delete` (bool): If True, permanently delete; if False, soft delete
-
-**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
-
-### list_documents()
-
-List documents accessible to an agent.
-
-```python
-async def list_documents(
-    organization_id: str,
-    agent_id: str,
-    status: Optional[str] = None,
-    tags: Optional[List[str]] = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> List[Document]
-```
-
-**Parameters:**
-- `organization_id` (str): Organization external ID
-- `agent_id` (str): Agent external ID (requester)
-- `status` (Optional[str]): Filter by status ('active', 'draft', 'archived', 'deleted')
-- `tags` (Optional[List[str]]): Filter by tags
-- `limit` (int): Maximum results (default: 50)
-- `offset` (int): Pagination offset (default: 0)
-
-**Returns:** `List[Document]` - Accessible documents
-
-### search()
-
-Search documents by text query.
-
-```python
-async def search(
-    query: str,
-    organization_id: str,
-    agent_id: str,
-    limit: int = 20,
-) -> List[Document]
-```
-
-**Parameters:**
-- `query` (str): Search query
-- `organization_id` (str): Organization external ID
-- `agent_id` (str): Agent external ID (requester)
-- `limit` (int): Maximum results (default: 20)
-
-**Returns:** `List[Document]` - Matching documents
-
-## Access Control
-
-### share()
-
-Share a document with another agent.
-
-```python
-async def share(
-    document_id: UUID,
-    agent_id: str,
-    permission: str,
-    granted_by: str,
-    expires_at=None,
-) -> None
-```
-
-**Parameters:**
-- `document_id` (UUID): Document UUID
-- `agent_id` (str): Agent external ID to grant access to
-- `permission` (str): Permission level ('READ', 'WRITE', 'DELETE', 'SHARE', 'ADMIN')
-- `granted_by` (str): Agent external ID granting access
-- `expires_at` (Optional[datetime]): Optional expiration datetime
-
-**Raises:** `DocumentNotFoundError`, `AgentNotFoundError`, `PermissionDeniedError`
-
-### revoke()
-
-Revoke access to a document.
-
-```python
-async def revoke(
-    document_id: UUID,
-    agent_id: str,
-    permission: str,
-    revoked_by: str,
-) -> None
-```
-
-**Parameters:**
-- `document_id` (UUID): Document UUID
-- `agent_id` (str): Agent external ID to revoke access from
-- `permission` (str): Permission to revoke
-- `revoked_by` (str): Agent external ID revoking access
-
-**Raises:** `DocumentNotFoundError`, `AgentNotFoundError`, `PermissionDeniedError`
-
-### check_permission()
-
-Check if an agent has a specific permission on a document.
-
-```python
-async def check_permission(
-    document_id: UUID,
-    agent_id: str,
-    permission: str,
-) -> bool
-```
-
-**Parameters:**
-- `document_id` (UUID): Document UUID
-- `agent_id` (str): Agent external ID
-- `permission` (str): Permission to check
-
-**Returns:** `bool` - True if agent has permission
-
-### list_accessible_documents()
-
-List documents accessible to an agent.
-
-```python
-async def list_accessible_documents(
-    agent_id: str,
-    organization_id: str,
-    permission: Optional[str] = None,
-) -> List[Document]
-```
-
-**Parameters:**
-- `agent_id` (str): Agent external ID
-- `organization_id` (str): Organization external ID
-- `permission` (Optional[str]): Optional permission filter
-
-**Returns:** `List[Document]` - Accessible documents
-
-### get_document_permissions()
-
-Get all permissions for a document.
-
-```python
-async def get_document_permissions(
-    document_id: UUID,
-    agent_id: str,
-) -> List[ACL]
-```
-
-**Parameters:**
-- `document_id` (UUID): Document UUID
-- `agent_id` (str): Agent external ID (must have ADMIN permission)
-
-**Returns:** `List[ACL]` - Document permissions
-
-**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
-
-## Version Management
-
-### get_versions()
-
-Get all versions of a document.
-
-```python
-async def get_versions(
-    document_id: UUID,
-    agent_id: str,
-) -> List[DocumentVersion]
-```
-
-**Parameters:**
-- `document_id` (UUID): Document UUID
-- `agent_id` (str): Agent external ID (requester)
-
-**Returns:** `List[DocumentVersion]` - Document versions
-
-**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
-
-### restore_version()
-
-Restore a previous version (creates new version).
-
-```python
-async def restore_version(
-    document_id: UUID,
-    version_number: int,
-    agent_id: str,
-    change_description: str,
-) -> DocumentVersion
-```
-
-**Parameters:**
-- `document_id` (UUID): Document UUID
-- `version_number` (int): Version to restore
-- `agent_id` (str): Agent external ID (restorer)
-- `change_description` (str): Description of the restore
-
-**Returns:** `DocumentVersion` - New version created from restore
-
-**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
-
-### get_version_info()
-
-Get information about a specific version.
-
-```python
-async def get_version_info(
-    document_id: UUID,
-    version_number: int,
-    agent_id: str,
-) -> DocumentVersion
-```
-
-**Parameters:**
-- `document_id` (UUID): Document UUID
-- `version_number` (int): Version number
-- `agent_id` (str): Agent external ID (requester)
-
-**Returns:** `DocumentVersion` - Version information
-
-**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
-
-## Organization & Agent Management
-
-### register_organization()
-
-Register a new organization (idempotent).
-
-```python
-async def register_organization(
-    external_id: str,
-    name: str,
-    metadata: Optional[Dict[str, Any]] = None,
-) -> Organization
-```
-
-**Parameters:**
-- `external_id` (str): External organization ID
-- `name` (str): Organization name
-- `metadata` (Optional[Dict[str, Any]]): Optional custom metadata
-
-**Returns:** `Organization` - The organization
-
-### register_agent()
-
-Register a new agent (idempotent).
-
-```python
-async def register_agent(
-    external_id: str,
-    organization_id: str,
-    name: str,
-    email: Optional[str] = None,
-    agent_type: str = "human",
-    metadata: Optional[Dict[str, Any]] = None,
-) -> Agent
-```
-
-**Parameters:**
-- `external_id` (str): External agent ID
-- `organization_id` (str): Organization external ID
-- `name` (str): Agent name
-- `email` (Optional[str]): Optional email
-- `agent_type` (str): 'human', 'ai', or 'service'
-- `metadata` (Optional[Dict[str, Any]]): Optional custom metadata
-
-**Returns:** `Agent` - The agent
-
-### get_organization()
-
-Get organization by external ID.
-
-```python
-async def get_organization(external_id: str) -> Organization
-```
-
-**Parameters:**
-- `external_id` (str): Organization external ID
-
-**Returns:** `Organization` - The organization
-
-**Raises:** `OrganizationNotFoundError`
-
-### get_agent()
-
-Get agent by external ID.
-
-```python
-async def get_agent(external_id: str) -> Agent
-```
-
-**Parameters:**
-- `external_id` (str): Agent external ID
-
-**Returns:** `Agent` - The agent
-
-**Raises:** `AgentNotFoundError`
-
-## Configuration
-
-### Config
-
-Configuration class for DocVault SDK.
-
-```python
-from doc_vault.config import Config
-
-# Load from environment variables
-config = Config.from_env()
-
-# Or create explicitly
-config = Config(
-    postgres_host="localhost",
-    postgres_port=5432,
-    postgres_user="postgres",
-    postgres_password="password",
-    postgres_db="doc_vault",
     postgres_ssl="disable",
     minio_endpoint="localhost:9000",
     minio_access_key="minioadmin",
@@ -483,138 +55,1006 @@ config = Config(
     bucket_prefix="doc-vault",
     log_level="INFO"
 )
+
+async with DocVaultSDK(config=config) as vault:
+    # Use vault...
+    pass
 ```
 
-**Environment Variables:**
-- `POSTGRES_HOST`: Database host (default: localhost)
-- `POSTGRES_PORT`: Database port (default: 5432)
-- `POSTGRES_USER`: Database user (required)
-- `POSTGRES_PASSWORD`: Database password (required)
-- `POSTGRES_DB`: Database name (required)
-- `POSTGRES_SSL`: SSL mode (default: disable)
-- `MINIO_ENDPOINT`: MinIO endpoint (required)
-- `MINIO_ACCESS_KEY`: MinIO access key (required)
-- `MINIO_SECRET_KEY`: MinIO secret key (required)
-- `MINIO_SECURE`: Use HTTPS (default: false)
-- `BUCKET_PREFIX`: S3 bucket prefix (default: doc-vault)
-- `LOG_LEVEL`: Logging level (default: INFO)
+**Important:** Always use the SDK as an async context manager to ensure proper resource cleanup.
+
+---
+
+## Organization & Agent Management
+
+### register_organization()
+
+Register a new organization using an external UUID.
+
+```python
+async def register_organization(
+    external_id: str,
+    name: str = None,  # Deprecated in v2.0
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Organization
+```
+
+**v2.0 Changes:**
+- `external_id` is now used as the primary UUID
+- `name` parameter is deprecated (kept for v1.x compatibility but ignored)
+- Organizations no longer store name/metadata in their core record
+
+**Parameters:**
+- `external_id` (str): **UUID string** - Must be a valid UUID v4
+- `name` (Optional[str]): Deprecated, ignored in v2.0
+- `metadata` (Optional[Dict]): Custom metadata (stored but not indexed)
+
+**Returns:** `Organization` - The registered organization
+
+**Example:**
+```python
+import uuid
+
+org_id = str(uuid.uuid4())  # Generate UUID
+org = await vault.register_organization(
+    external_id=org_id,
+    metadata={"industry": "technology"}
+)
+```
+
+**Raises:** `DatabaseError`, `ValidationError`
+
+---
+
+### register_agent()
+
+Register a new agent (user or AI) within an organization.
+
+```python
+async def register_agent(
+    external_id: str,
+    organization_id: str,
+    name: str = None,  # Deprecated in v2.0
+    email: str = None,  # Deprecated in v2.0
+    agent_type: str = None,  # Deprecated in v2.0
+    is_active: bool = True,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Agent
+```
+
+**v2.0 Changes:**
+- `external_id` is now used as the primary UUID
+- `name`, `email`, `agent_type` parameters are deprecated
+- Agents no longer store identity information
+
+**Parameters:**
+- `external_id` (str): **UUID string** - Must be a valid UUID v4
+- `organization_id` (str): Organization UUID
+- `name`, `email`, `agent_type`: Deprecated, ignored in v2.0
+- `is_active` (bool): Whether agent is active (default: True)
+- `metadata` (Optional[Dict]): Custom metadata
+
+**Returns:** `Agent` - The registered agent
+
+**Example:**
+```python
+agent_id = str(uuid.uuid4())
+agent = await vault.register_agent(
+    external_id=agent_id,
+    organization_id=org_id,
+    is_active=True,
+    metadata={"role": "admin"}
+)
+```
+
+**Raises:** `OrganizationNotFoundError`, `DatabaseError`
+
+---
+
+### delete_organization() ⭐ NEW
+
+Delete an organization and optionally cascade delete related data.
+
+```python
+async def delete_organization(
+    org_id: str | UUID,
+    force: bool = False
+) -> None
+```
+
+**Parameters:**
+- `org_id` (str | UUID): Organization UUID
+- `force` (bool): If True, cascade delete agents and documents; if False, fail if organization has related data
+
+**Example:**
+```python
+# Safe delete (fails if organization has agents/documents)
+await vault.delete_organization(org_id=org_id, force=False)
+
+# Force delete (removes everything)
+await vault.delete_organization(org_id=org_id, force=True)
+```
+
+**Raises:** `OrganizationNotFoundError`, `DatabaseError`, `ValidationError`
+
+---
+
+### remove_agent() ⭐ NEW
+
+Remove an agent from an organization (soft delete by marking inactive).
+
+```python
+async def remove_agent(
+    agent_id: str | UUID
+) -> None
+```
+
+**Parameters:**
+- `agent_id` (str | UUID): Agent UUID
+
+**Example:**
+```python
+await vault.remove_agent(agent_id=agent_id)
+```
+
+**Raises:** `AgentNotFoundError`, `DatabaseError`
+
+---
+
+## Document Operations
+
+### upload()
+
+Upload a document with support for multiple input types.
+
+```python
+async def upload(
+    file_path: Union[str, bytes, BinaryIO],
+    name: str,
+    organization_id: str | UUID,
+    agent_id: str | UUID,
+    description: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    prefix: Optional[str] = None,  # ⭐ NEW in v2.0
+    replace_existing: Optional[UUID] = None,  # ⭐ NEW in v2.0
+) -> Document
+```
+
+**v2.0 Enhancements:**
+- **Multiple input types:** file paths (str), bytes, binary streams (BinaryIO)
+- **Hierarchical organization:** `prefix` parameter for organizing documents
+- **Replace option:** `replace_existing` to update document without creating version
+
+**Parameters:**
+- `file_path` (str | bytes | BinaryIO): Document content
+  - `str`: Path to file on disk
+  - `bytes`: In-memory document content
+  - `BinaryIO`: Binary stream (e.g., `open(file, 'rb')`)
+- `name` (str): Display name for the document
+- `organization_id` (str | UUID): Organization UUID
+- `agent_id` (str | UUID): Uploader UUID
+- `description` (Optional[str]): Document description
+- `tags` (Optional[List[str]]): Tags for categorization
+- `metadata` (Optional[Dict]): Custom metadata
+- `prefix` (Optional[str]): Hierarchical prefix (e.g., "/reports/2025/q1")
+- `replace_existing` (Optional[UUID]): Replace this document's content without versioning
+
+**Returns:** `Document` - The created/updated document
+
+**Examples:**
+```python
+# Upload from file path
+doc = await vault.upload(
+    file_path="/path/to/report.pdf",
+    name="Q1 Report",
+    organization_id=org_id,
+    agent_id=agent_id,
+    prefix="/reports/2025/q1"
+)
+
+# Upload from bytes
+content = b"Document content here"
+doc = await vault.upload(
+    file_path=content,
+    name="In-Memory Document",
+    organization_id=org_id,
+    agent_id=agent_id
+)
+
+# Upload from stream
+with open("large_file.pdf", "rb") as f:
+    doc = await vault.upload(
+        file_path=f,
+        name="Streamed Upload",
+        organization_id=org_id,
+        agent_id=agent_id
+    )
+
+# Replace existing document content
+doc = await vault.upload(
+    file_path="/path/to/updated.pdf",
+    name="Updated Report",
+    organization_id=org_id,
+    agent_id=agent_id,
+    replace_existing=existing_doc_id  # Replaces without versioning
+)
+```
+
+**Raises:** `AgentNotFoundError`, `OrganizationNotFoundError`, `FileNotFoundError`, `PermissionDeniedError`
+
+---
+
+### download()
+
+Download a document.
+
+```python
+async def download(
+    document_id: UUID | str,
+    agent_id: UUID | str,
+    version: Optional[int] = None,
+) -> bytes
+```
+
+**Parameters:**
+- `document_id` (UUID | str): Document UUID
+- `agent_id` (UUID | str): Requester UUID
+- `version` (Optional[int]): Specific version number (None = current)
+
+**Returns:** `bytes` - Document content
+
+**Example:**
+```python
+# Download current version
+content = await vault.download(document_id=doc_id, agent_id=agent_id)
+
+# Download specific version
+v1_content = await vault.download(
+    document_id=doc_id, 
+    agent_id=agent_id, 
+    version=1
+)
+```
+
+**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
+
+---
+
+### replace()
+
+Replace document content (creates new version).
+
+```python
+async def replace(
+    document_id: UUID | str,
+    file_path: str,
+    agent_id: UUID | str,
+    change_description: str,
+) -> DocumentVersion
+```
+
+**Parameters:**
+- `document_id` (UUID | str): Document UUID
+- `file_path` (str): Path to new content
+- `agent_id` (UUID | str): Updater UUID
+- `change_description` (str): Description of changes
+
+**Returns:** `DocumentVersion` - The new version
+
+**Example:**
+```python
+new_version = await vault.replace(
+    document_id=doc_id,
+    file_path="/path/to/updated.pdf",
+    agent_id=agent_id,
+    change_description="Updated financial projections"
+)
+```
+
+**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
+
+---
+
+### update_metadata()
+
+Update document metadata without changing content.
+
+```python
+async def update_metadata(
+    document_id: UUID | str,
+    agent_id: UUID | str,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Document
+```
+
+**Parameters:**
+- `document_id` (UUID | str): Document UUID
+- `agent_id` (UUID | str): Updater UUID
+- `name`, `description`, `tags`, `metadata`: Fields to update
+
+**Returns:** `Document` - Updated document
+
+**Example:**
+```python
+doc = await vault.update_metadata(
+    document_id=doc_id,
+    agent_id=agent_id,
+    tags=["reviewed", "approved"],
+    metadata={"approval_date": "2025-11-20"}
+)
+```
+
+---
+
+### delete()
+
+Delete a document (soft or hard delete).
+
+```python
+async def delete(
+    document_id: UUID | str,
+    agent_id: UUID | str,
+    hard_delete: bool = False,
+) -> None
+```
+
+**Parameters:**
+- `document_id` (UUID | str): Document UUID
+- `agent_id` (UUID | str): Deleter UUID
+- `hard_delete` (bool): True = permanent, False = mark as deleted
+
+**Example:**
+```python
+# Soft delete (reversible)
+await vault.delete(document_id=doc_id, agent_id=agent_id, hard_delete=False)
+
+# Hard delete (permanent)
+await vault.delete(document_id=doc_id, agent_id=agent_id, hard_delete=True)
+```
+
+---
+
+### list_docs() ⭐ UPDATED
+
+List documents with enhanced filtering and pagination.
+
+```python
+async def list_docs(
+    organization_id: UUID | str,
+    agent_id: UUID | str,
+    prefix: Optional[str] = None,  # ⭐ NEW
+    recursive: bool = False,  # ⭐ NEW
+    max_depth: Optional[int] = None,  # ⭐ NEW
+    status: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    sort_by: str = "created_at",  # ⭐ NEW
+    sort_order: str = "desc",  # ⭐ NEW
+    limit: int = 50,
+    offset: int = 0,
+) -> List[Document]
+```
+
+**v2.0 Enhancements:**
+- Hierarchical listing with `prefix`, `recursive`, `max_depth`
+- Sorting options with `sort_by` and `sort_order`
+- Permission-filtered results
+
+**Parameters:**
+- `organization_id` (UUID | str): Organization UUID
+- `agent_id` (UUID | str): Requester UUID
+- `prefix` (Optional[str]): Filter by prefix (e.g., "/reports/2025")
+- `recursive` (bool): Include subdirectories
+- `max_depth` (Optional[int]): Maximum depth for recursive listing
+- `status` (Optional[str]): Filter by status
+- `tags` (Optional[List[str]]): Filter by tags
+- `sort_by` (str): Sort field (default: "created_at")
+- `sort_order` (str): "asc" or "desc" (default: "desc")
+- `limit` (int): Max results (default: 50)
+- `offset` (int): Pagination offset
+
+**Examples:**
+```python
+# List all documents
+docs = await vault.list_docs(
+    organization_id=org_id,
+    agent_id=agent_id
+)
+
+# List documents in specific folder
+reports = await vault.list_docs(
+    organization_id=org_id,
+    agent_id=agent_id,
+    prefix="/reports/2025"
+)
+
+# Recursive listing with depth limit
+all_docs = await vault.list_docs(
+    organization_id=org_id,
+    agent_id=agent_id,
+    prefix="/reports",
+    recursive=True,
+    max_depth=3
+)
+
+# Filtered and sorted
+filtered = await vault.list_docs(
+    organization_id=org_id,
+    agent_id=agent_id,
+    status="active",
+    tags=["important"],
+    sort_by="name",
+    sort_order="asc",
+    limit=20
+)
+```
+
+---
+
+### search()
+
+Search documents by text query.
+
+```python
+async def search(
+    query: str,
+    organization_id: UUID | str,
+    agent_id: UUID | str,
+    prefix: Optional[str] = None,  # ⭐ NEW
+    limit: int = 20,
+) -> List[Document]
+```
+
+**v2.0 Enhancement:** Added `prefix` parameter to scope search
+
+**Parameters:**
+- `query` (str): Search query
+- `organization_id` (UUID | str): Organization UUID
+- `agent_id` (UUID | str): Requester UUID
+- `prefix` (Optional[str]): Limit search to prefix
+- `limit` (int): Max results
+
+**Example:**
+```python
+results = await vault.search(
+    query="financial report",
+    organization_id=org_id,
+    agent_id=agent_id,
+    prefix="/reports/2025",
+    limit=10
+)
+```
+
+---
+
+### get_document_details() ⭐ NEW
+
+Get comprehensive document information including versions and permissions.
+
+```python
+async def get_document_details(
+    document_id: UUID | str,
+    agent_id: UUID | str,
+    include_versions: bool = True,
+    include_permissions: bool = False,
+) -> Dict[str, Any]
+```
+
+**Replaces:** `get_versions()`, `get_version_info()` from v1.x
+
+**Parameters:**
+- `document_id` (UUID | str): Document UUID
+- `agent_id` (UUID | str): Requester UUID
+- `include_versions` (bool): Include version history
+- `include_permissions` (bool): Include permission details
+
+**Returns:** Dictionary with:
+- `document`: Document details
+- `versions`: List of versions (if `include_versions=True`)
+- `permissions`: Permission list (if `include_permissions=True`)
+
+**Example:**
+```python
+details = await vault.get_document_details(
+    document_id=doc_id,
+    agent_id=agent_id,
+    include_versions=True,
+    include_permissions=True
+)
+
+print(f"Document: {details['document']['name']}")
+print(f"Current version: {details['document']['current_version']}")
+print(f"Total versions: {len(details.get('versions', []))}")
+
+for version in details.get('versions', []):
+    print(f"  v{version['version_number']}: {version['change_description']}")
+```
+
+---
+
+## Access Control & Permissions
+
+### get_permissions() ⭐ NEW
+
+Get permissions for a document.
+
+```python
+async def get_permissions(
+    document_id: UUID | str,
+    agent_id: UUID | str,
+    org_id: UUID | str,
+    permission_filter: Optional[str] = None,
+) -> List[Dict[str, Any]]
+```
+
+**Replaces:** `get_document_permissions()`, `check_permission()` from v1.x
+
+**Parameters:**
+- `document_id` (UUID | str): Document UUID
+- `agent_id` (UUID | str): Requester UUID (must have ADMIN permission)
+- `org_id` (UUID | str): Organization UUID
+- `permission_filter` (Optional[str]): Filter by permission type
+
+**Returns:** List of permission dictionaries
+
+**Example:**
+```python
+# Get all permissions
+perms = await vault.get_permissions(
+    document_id=doc_id,
+    agent_id=admin_id,
+    org_id=org_id
+)
+
+for perm in perms:
+    print(f"{perm['agent_id']}: {perm['permission']}")
+
+# Check specific permission
+read_perms = await vault.get_permissions(
+    document_id=doc_id,
+    agent_id=admin_id,
+    org_id=org_id,
+    permission_filter="READ"
+)
+```
+
+**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
+
+---
+
+### set_permissions() ⭐ NEW
+
+Set or update permissions for a document.
+
+```python
+async def set_permissions(
+    document_id: UUID | str,
+    org_id: UUID | str,
+    permissions: List[Dict[str, Any]],
+    granted_by: UUID | str,
+) -> None
+```
+
+**Replaces:** `share()`, `revoke()` from v1.x
+
+**Parameters:**
+- `document_id` (UUID | str): Document UUID
+- `org_id` (UUID | str): Organization UUID
+- `permissions` (List[Dict]): List of permission dictionaries
+- `granted_by` (UUID | str): Granter UUID (must have ADMIN or SHARE permission)
+
+**Permission Dictionary Format:**
+```python
+{
+    "agent_id": str,  # Agent UUID
+    "permission": str,  # READ, WRITE, DELETE, SHARE, ADMIN
+    "expires_at": Optional[datetime],
+    "metadata": Optional[Dict]
+}
+```
+
+**Examples:**
+```python
+# Grant READ permission to one agent
+await vault.set_permissions(
+    document_id=doc_id,
+    org_id=org_id,
+    permissions=[
+        {"agent_id": str(agent_id), "permission": "READ"}
+    ],
+    granted_by=admin_id
+)
+
+# Grant multiple permissions
+await vault.set_permissions(
+    document_id=doc_id,
+    org_id=org_id,
+    permissions=[
+        {"agent_id": str(viewer_id), "permission": "READ"},
+        {"agent_id": str(editor_id), "permission": "WRITE"},
+        {"agent_id": str(admin_id), "permission": "ADMIN"}
+    ],
+    granted_by=owner_id
+)
+
+# Grant with expiration
+from datetime import datetime, timedelta
+await vault.set_permissions(
+    document_id=doc_id,
+    org_id=org_id,
+    permissions=[
+        {
+            "agent_id": str(temp_user_id),
+            "permission": "READ",
+            "expires_at": datetime.now() + timedelta(days=7)
+        }
+    ],
+    granted_by=admin_id
+)
+```
+
+**Permission Levels:**
+- **READ**: View document content
+- **WRITE**: Modify document content/metadata
+- **DELETE**: Delete document
+- **SHARE**: Grant permissions to others
+- **ADMIN**: Full control (inherits all permissions)
+
+**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`, `ValidationError`
+
+---
+
+### check_permissions() ⭐ NEW
+
+Check multiple permissions for an agent.
+
+```python
+async def check_permissions(
+    document_id: UUID | str,
+    agent_id: UUID | str,
+    permissions: List[str],
+) -> Dict[str, bool]
+```
+
+**Parameters:**
+- `document_id` (UUID | str): Document UUID
+- `agent_id` (UUID | str): Agent UUID
+- `permissions` (List[str]): Permissions to check
+
+**Returns:** Dictionary mapping permission to boolean
+
+**Example:**
+```python
+perms = await vault.check_permissions(
+    document_id=doc_id,
+    agent_id=agent_id,
+    permissions=["READ", "WRITE", "DELETE"]
+)
+
+if perms["READ"]:
+    print("Agent can read")
+if perms["WRITE"]:
+    print("Agent can write")
+```
+
+---
+
+### transfer_ownership() ⭐ NEW
+
+Transfer document ownership to another agent.
+
+```python
+async def transfer_ownership(
+    document_id: UUID | str,
+    new_owner_id: UUID | str,
+    transferred_by: UUID | str,
+) -> None
+```
+
+**Parameters:**
+- `document_id` (UUID | str): Document UUID
+- `new_owner_id` (UUID | str): New owner UUID
+- `transferred_by` (UUID | str): Current owner UUID (must have ADMIN)
+
+**Example:**
+```python
+await vault.transfer_ownership(
+    document_id=doc_id,
+    new_owner_id=new_admin_id,
+    transferred_by=current_admin_id
+)
+```
+
+---
+
+## Version Management
+
+Versioning is now handled through `get_document_details()` and `replace()`.
+
+### Get Version History
+
+```python
+details = await vault.get_document_details(
+    document_id=doc_id,
+    agent_id=agent_id,
+    include_versions=True
+)
+
+versions = details.get("versions", [])
+for v in versions:
+    print(f"Version {v['version_number']}: {v['change_description']}")
+```
+
+### Download Specific Version
+
+```python
+# Download version 2
+content = await vault.download(
+    document_id=doc_id,
+    agent_id=agent_id,
+    version=2
+)
+```
+
+### Create New Version
+
+```python
+new_version = await vault.replace(
+    document_id=doc_id,
+    file_path="/path/to/updated.pdf",
+    agent_id=agent_id,
+    change_description="Updated with Q4 data"
+)
+```
+
+---
+
+## Configuration
+
+### Config Class
+
+```python
+from doc_vault.config import Config
+
+config = Config(
+    # PostgreSQL Configuration
+    postgres_host: str = "localhost",
+    postgres_port: int = 5432,
+    postgres_user: str = "postgres",
+    postgres_password: str = "password",
+    postgres_db: str = "doc_vault",
+    postgres_ssl: str = "disable",  # disable, prefer, require
+    
+    # MinIO/S3 Configuration
+    minio_endpoint: str = "localhost:9000",
+    minio_access_key: str = "minioadmin",
+    minio_secret_key: str = "minioadmin",
+    minio_secure: bool = False,
+    
+    # DocVault Configuration
+    bucket_prefix: str = "doc-vault",
+    log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+)
+```
+
+### Configuration Sources (Priority Order)
+
+1. **Direct Config object** - Highest priority
+2. **Environment variables** - `POSTGRES_*`, `MINIO_*`, etc.
+3. **.env file** - If `python-dotenv` is installed
+4. **Defaults** - Hardcoded defaults
+
+---
 
 ## Exceptions
 
-DocVault defines custom exceptions for different error conditions:
-
-### AgentNotFoundError
-Raised when an agent cannot be found by external ID.
-
-### OrganizationNotFoundError
-Raised when an organization cannot be found by external ID.
-
-### DocumentNotFoundError
-Raised when a document cannot be found.
-
-### PermissionDeniedError
-Raised when an agent doesn't have permission for an operation.
-
-### ValidationError
-Raised when input validation fails.
-
-### StorageError
-Raised when storage operations fail.
-
-### DatabaseError
-Raised when database operations fail.
-
-All exceptions inherit from `DocVaultError` for easy catching:
+### Core Exceptions
 
 ```python
-from doc_vault.exceptions import DocVaultError
+from doc_vault.exceptions import (
+    DocVaultError,           # Base exception
+    DatabaseError,           # Database operation failed
+    StorageError,            # Storage operation failed
+    ValidationError,         # Invalid input
+    
+    # Entity Not Found
+    OrganizationNotFoundError,
+    AgentNotFoundError,
+    DocumentNotFoundError,
+    VersionNotFoundError,
+    
+    # Permission Errors
+    PermissionDeniedError,
+    InsufficientPermissionsError,
+)
+```
+
+### Error Handling Example
+
+```python
+from doc_vault.exceptions import DocumentNotFoundError, PermissionDeniedError
 
 try:
-    # SDK operations...
-    pass
-except DocVaultError as e:
-    # Handle DocVault-specific errors
-    print(f"DocVault error: {e}")
+    content = await vault.download(document_id=doc_id, agent_id=agent_id)
+except DocumentNotFoundError:
+    print("Document does not exist")
+except PermissionDeniedError:
+    print("Agent lacks READ permission")
+except Exception as e:
+    print(f"Unexpected error: {e}")
 ```
 
-## Data Models
+---
 
-### Document
+## Migration from v1.x
+
+### API Method Mapping
+
+| v1.x Method | v2.0 Replacement | Notes |
+|-------------|------------------|-------|
+| `share()` | `set_permissions()` | Bulk API, more flexible |
+| `revoke()` | `set_permissions()` | Same method for grant/revoke |
+| `check_permission()` | `get_permissions()` or `check_permissions()` | More efficient bulk checking |
+| `list_accessible_documents()` | `list_docs()` | Enhanced with prefix support |
+| `get_document_permissions()` | `get_permissions()` | Unified API |
+| `get_versions()` | `get_document_details(include_versions=True)` | More comprehensive |
+| `get_version_info()` | `get_document_details(include_versions=True)` | Returns all versions |
+
+### Code Migration Examples
+
+#### Sharing Documents
 
 ```python
-class Document:
-    id: UUID
-    organization_id: UUID
-    name: str
-    description: Optional[str]
-    filename: str
-    file_size: int
-    mime_type: Optional[str]
-    storage_path: str
-    current_version: int
-    status: str  # 'draft', 'active', 'archived', 'deleted'
-    created_by: UUID
-    updated_by: Optional[UUID]
-    metadata: Dict[str, Any]
-    tags: List[str]
-    created_at: datetime
-    updated_at: datetime
+# v1.x
+await vault.share(
+    document_id=doc_id,
+    agent_id=viewer_id,
+    permission="READ",
+    granted_by=owner_id
+)
+
+# v2.0
+await vault.set_permissions(
+    document_id=doc_id,
+    org_id=org_id,
+    permissions=[{"agent_id": str(viewer_id), "permission": "READ"}],
+    granted_by=owner_id
+)
 ```
 
-### DocumentVersion
+#### Checking Permissions
 
 ```python
-class DocumentVersion:
-    id: UUID
-    document_id: UUID
-    version_number: int
-    filename: str
-    file_size: int
-    storage_path: str
-    mime_type: Optional[str]
-    change_description: Optional[str]
-    change_type: str  # 'create', 'update', 'restore'
-    created_by: UUID
-    created_at: datetime
-    metadata: Dict[str, Any]
+# v1.x
+has_read = await vault.check_permission(
+    document_id=doc_id,
+    agent_id=agent_id,
+    permission="READ"
+)
+
+# v2.0
+perms = await vault.check_permissions(
+    document_id=doc_id,
+    agent_id=agent_id,
+    permissions=["READ"]
+)
+has_read = perms["READ"]
 ```
 
-### ACL
+#### Getting Version History
 
 ```python
-class ACL:
-    id: UUID
-    document_id: UUID
-    agent_id: UUID
-    permission: str  # 'READ', 'WRITE', 'DELETE', 'SHARE', 'ADMIN'
-    granted_by: UUID
-    granted_at: datetime
-    expires_at: Optional[datetime]
+# v1.x
+versions = await vault.get_versions(
+    document_id=doc_id,
+    agent_id=agent_id
+)
+
+# v2.0
+details = await vault.get_document_details(
+    document_id=doc_id,
+    agent_id=agent_id,
+    include_versions=True
+)
+versions = details.get("versions", [])
 ```
 
-### Organization
+---
+
+## Best Practices
+
+### 1. UUID Management
 
 ```python
-class Organization:
-    id: UUID
-    external_id: str
-    name: str
-    metadata: Dict[str, Any]
-    created_at: datetime
-    updated_at: datetime
+import uuid
+
+# Always use UUIDs for entities
+org_id = str(uuid.uuid4())
+agent_id = str(uuid.uuid4())
+
+# Never use hardcoded strings
+# ❌ Bad: org_id = "my-org-001"
+# ✅ Good: org_id = str(uuid.uuid4())
 ```
 
-### Agent
+### 2. Hierarchical Organization
 
 ```python
-class Agent:
-    id: UUID
-    external_id: str
-    organization_id: UUID
-    name: str
-    email: Optional[str]
-    agent_type: str  # 'human', 'ai', 'service'
-    metadata: Dict[str, Any]
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
+# Use meaningful prefix structures
+prefixes = {
+    "reports": "/reports/2025/q1",
+    "contracts": "/legal/contracts/2025",
+    "invoices": "/finance/invoices/november"
+}
+
+doc = await vault.upload(
+    file_path=path,
+    name="Q1 Report",
+    organization_id=org_id,
+    agent_id=agent_id,
+    prefix=prefixes["reports"]
+)
+```
+
+### 3. Permission Management
+
+```python
+# Grant minimal permissions initially
+await vault.set_permissions(
+    document_id=doc_id,
+    org_id=org_id,
+    permissions=[
+        {"agent_id": str(viewer_id), "permission": "READ"}
+    ],
+    granted_by=admin_id
+)
+
+# Escalate only when needed
+await vault.set_permissions(
+    document_id=doc_id,
+    org_id=org_id,
+    permissions=[
+        {"agent_id": str(viewer_id), "permission": "WRITE"}
+    ],
+    granted_by=admin_id
+)
+```
+
+### 4. Error Handling
+
+```python
+from doc_vault.exceptions import (
+    DocumentNotFoundError,
+    PermissionDeniedError,
+    DatabaseError
+)
+
+try:
+    doc = await vault.download(document_id=doc_id, agent_id=agent_id)
+except DocumentNotFoundError:
+    # Handle missing document
+    logger.error(f"Document {doc_id} not found")
+except PermissionDeniedError:
+    # Handle permission issue
+    logger.warning(f"Agent {agent_id} lacks access")
+except DatabaseError as e:
+    # Handle database errors
+    logger.error(f"Database error: {e}")
+    raise
+```
+
+---
+
+## Additional Resources
+
+- [BREAKING_CHANGES.md](./plan/v2/BREAKING_CHANGES.md) - Complete migration guide
+- [QUICK_REFERENCE.md](./plan/v2/QUICK_REFERENCE.md) - Quick migration cheat sheet
+- [Examples](../examples/) - Code examples for common use cases
+- [README.md](../README.md) - Project overview and setup
+
+---
+
+**DocVault SDK v2.0** - Scalable document management for organizations and AI agents.

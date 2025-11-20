@@ -608,7 +608,7 @@ class ACLRepository(BaseRepository[DocumentACL]):
                 WHERE document_id = $1 AND agent_id = $2 AND permission = $3
             """
 
-            await self.manager.execute(query, document_id, agent_id, permission)
+            await self.db_manager.execute(query, [document_id, agent_id, permission])
             return True
 
         except Exception as e:

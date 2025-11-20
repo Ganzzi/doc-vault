@@ -7,7 +7,7 @@ the high-level API for document management.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, BinaryIO, Dict, List, Optional
 from uuid import UUID
 
 from .config import Config
@@ -112,25 +112,27 @@ class DocVaultSDK:
     async def _resolve_external_ids(
         self, organization_id: Optional[str] = None, agent_id: Optional[str] = None
     ) -> tuple[Optional[UUID], Optional[UUID]]:
-        """Resolve external IDs to UUIDs."""
+        """
+        Resolve external IDs to UUIDs.
+
+        In v2.0, external_id IS the UUID, so this just ensures proper UUID format.
+        """
         org_uuid = None
         agent_uuid = None
 
         if organization_id:
-            org_repo = OrganizationRepository(self._db_manager)
-            organization = await org_repo.get_by_external_id(organization_id)
-            if not organization:
-                raise OrganizationNotFoundError(
-                    f"Organization {organization_id} not found"
-                )
-            org_uuid = organization.id
+            # In v2.0, organization_id IS the UUID
+            if isinstance(organization_id, str):
+                org_uuid = UUID(organization_id)
+            else:
+                org_uuid = organization_id
 
         if agent_id:
-            agent_repo = AgentRepository(self._db_manager)
-            agent = await agent_repo.get_by_external_id(agent_id)
-            if not agent:
-                raise AgentNotFoundError(f"Agent {agent_id} not found")
-            agent_uuid = agent.id
+            # In v2.0, agent_id IS the UUID
+            if isinstance(agent_id, str):
+                agent_uuid = UUID(agent_id)
+            else:
+                agent_uuid = agent_id
 
         return org_uuid, agent_uuid
 
@@ -153,47 +155,52 @@ class DocVaultSDK:
 
     async def upload(
         self,
-        file_path: str,
+        file_input: str | bytes | BinaryIO,
         name: str,
-        organization_id: str,
-        agent_id: str,
+        organization_id: str | UUID,
+        agent_id: str | UUID,
         description: Optional[str] = None,
         tags: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        content_type: Optional[str] = None,
+        filename: Optional[str] = None,
+        prefix: Optional[str] = None,
     ):
         """
-        Upload a document.
+        Upload a document with flexible input support.
+
+        Supports file paths (str), bytes, and binary streams (BinaryIO).
 
         Args:
-            file_path: Path to the file to upload
-            name: Display name for the document
-            organization_id: Organization external ID
-            agent_id: Agent external ID (uploader)
+            file_input: File path (str), bytes, or binary stream
+            name: Document display name
+            organization_id: Organization UUID or string
+            agent_id: Agent UUID or string
             description: Optional description
-            tags: Optional list of tags
-            metadata: Optional custom metadata
+            tags: Optional tags list
+            metadata: Optional custom metadata dict
+            content_type: Optional MIME type override
+            filename: Optional filename override
+            prefix: Optional hierarchical prefix (e.g., '/reports/2025/')
 
         Returns:
-            Document: The created document
+            Document: The created document instance
         """
         if not self._document_service:
             raise RuntimeError(
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
 
-        # Resolve external IDs to UUIDs
-        org_uuid, agent_uuid = await self._resolve_external_ids(
-            organization_id=organization_id, agent_id=agent_id
-        )
-
-        return await self._document_service.upload_document(
-            file_path=file_path,
+        return await self._document_service.upload_enhanced(
+            file_input=file_input,
             name=name,
-            organization_id=org_uuid,
-            agent_id=agent_uuid,
+            organization_id=organization_id,
+            agent_id=agent_id,
             description=description,
-            tags=tags or [],
-            metadata=metadata or {},
+            tags=tags,
+            metadata=metadata,
+            content_type=content_type,
+            filename=filename,
         )
 
     async def download(
@@ -267,35 +274,42 @@ class DocVaultSDK:
 
     async def replace(
         self,
-        document_id: UUID,
-        file_path: str,
-        agent_id: str,
-        change_description: str,
+        document_id: str | UUID,
+        file_input: str | bytes | BinaryIO,
+        agent_id: str | UUID,
+        change_description: str = "Content updated",
+        create_version: bool = True,
+        filename: Optional[str] = None,
+        content_type: Optional[str] = None,
     ):
         """
-        Replace document content (creates new version).
+        Replace document content with flexible input support.
 
         Args:
-            document_id: Document UUID
-            file_path: Path to new file content
-            agent_id: Agent external ID (updater)
-            change_description: Description of the change
+            document_id: Document UUID or string
+            file_input: File path (str), bytes, or binary stream
+            agent_id: Agent UUID or string
+            change_description: Description of the change (default: "Content updated")
+            create_version: Whether to create version before replacement (default: True)
+            filename: Optional filename override
+            content_type: Optional MIME type override
 
         Returns:
-            DocumentVersion: The new version
+            Document: The updated document instance
         """
         if not self._document_service:
             raise RuntimeError(
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
-        # Resolve external IDs to UUIDs
-        _, agent_uuid = await self._resolve_external_ids(agent_id=agent_id)
 
-        return await self._document_service.replace_document(
+        return await self._document_service.replace_document_content(
             document_id=document_id,
-            file_path=file_path,
-            agent_id=agent_uuid,
+            file_input=file_input,
+            agent_id=agent_id,
             change_description=change_description,
+            create_version=create_version,
+            filename=filename,
+            content_type=content_type,
         )
 
     async def delete(
@@ -325,262 +339,175 @@ class DocVaultSDK:
             hard_delete=hard_delete,
         )
 
-    async def list_documents(
+    async def list_docs(
         self,
-        organization_id: str,
-        agent_id: str,
+        organization_id: str | UUID,
+        agent_id: str | UUID,
+        prefix: Optional[str] = None,
+        recursive: bool = False,
+        max_depth: Optional[int] = None,
         status: Optional[str] = None,
         tags: Optional[List[str]] = None,
         limit: int = 50,
         offset: int = 0,
-    ):
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+    ) -> Dict[str, Any]:
         """
-        List documents accessible to an agent.
+        List documents with hierarchical organization support.
 
         Args:
-            organization_id: Organization external ID
-            agent_id: Agent external ID (requester)
+            organization_id: Organization UUID or string
+            agent_id: Agent UUID or string
+            prefix: Optional hierarchical prefix filter (e.g., '/reports/2025/')
+            recursive: If True, list recursively under prefix
+            max_depth: Maximum recursion depth (None = unlimited)
             status: Optional status filter ('active', 'draft', 'archived', 'deleted')
             tags: Optional tag filters
-            limit: Maximum number of results
+            limit: Maximum number of results per page
             offset: Pagination offset
+            sort_by: Sort field (default: 'created_at')
+            sort_order: Sort direction ('asc' or 'desc')
 
         Returns:
-            List[Document]: Accessible documents
+            Dictionary with documents list and pagination metadata
         """
         if not self._document_service:
             raise RuntimeError(
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
-        # Resolve external IDs to UUIDs
-        org_uuid, agent_uuid = await self._resolve_external_ids(
-            organization_id=organization_id, agent_id=agent_id
+
+        return await self._document_service.list_documents_paginated(
+            organization_id=organization_id,
+            agent_id=agent_id,
+            status=status,
+            tags=tags,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
-        return await self._document_service.list_documents(
-            organization_id=org_uuid,
-            agent_id=agent_uuid,
+    async def search(
+        self,
+        query: str,
+        organization_id: str | UUID,
+        agent_id: str | UUID,
+        prefix: Optional[str] = None,
+        status: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """
+        Search documents with optional filters.
+
+        Args:
+            query: Search query text
+            organization_id: Organization UUID or string
+            agent_id: Agent UUID or string
+            prefix: Optional hierarchical prefix filter (e.g., '/reports/')
+            status: Optional status filter
+            tags: Optional tag filter
+            limit: Maximum results
+            offset: Result offset for pagination
+
+        Returns:
+            Dictionary with search results and metadata
+        """
+        if not self._document_service:
+            raise RuntimeError(
+                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
+            )
+
+        return await self._document_service.search_documents_enhanced(
+            query=query,
+            organization_id=organization_id,
+            agent_id=agent_id,
+            prefix=prefix,
             status=status,
             tags=tags,
             limit=limit,
             offset=offset,
         )
 
-    async def search(
+    # Access Control & Permissions
+
+    async def get_permissions(
         self,
-        query: str,
-        organization_id: str,
-        agent_id: str,
-        limit: int = 20,
-    ):
+        document_id: str | UUID,
+        agent_id: Optional[str | UUID] = None,
+        org_id: Optional[str | UUID] = None,
+    ) -> Dict[str, Any]:
         """
-        Search documents by text query.
+        Get permissions for a document.
+
+        Returns all permissions if agent_id is None, or permissions for specific agent.
 
         Args:
-            query: Search query
-            organization_id: Organization external ID
-            agent_id: Agent external ID (requester)
-            limit: Maximum number of results
+            document_id: Document UUID or string
+            agent_id: Optional agent UUID/string to filter permissions
+            org_id: Optional organization UUID/string for validation
 
         Returns:
-            List[Document]: Matching documents
-        """
-        # Resolve external IDs to UUIDs
-        org_uuid, agent_uuid = await self._resolve_external_ids(
-            organization_id=organization_id, agent_id=agent_id
-        )
-
-        return await self._document_service.search_documents(
-            query=query,
-            organization_id=org_uuid,
-            agent_id=agent_uuid,
-            limit=limit,
-        )
-
-    # Access Control
-
-    async def share(
-        self,
-        document_id: UUID,
-        agent_id: str,
-        permission: str,
-        granted_by: str,
-        expires_at=None,
-    ) -> None:
-        """
-        Share a document with another agent.
-
-        Args:
-            document_id: Document UUID
-            agent_id: Agent external ID to grant access to
-            permission: Permission level ('READ', 'WRITE', 'DELETE', 'SHARE', 'ADMIN')
-            granted_by: Agent external ID granting access
-            expires_at: Optional expiration datetime
+            Dictionary with permission details
         """
         if not self._access_service:
             raise RuntimeError(
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
-        # Resolve external IDs to UUIDs
-        _, agent_uuid = await self._resolve_external_ids(agent_id=agent_id)
-        _, granted_by_uuid = await self._resolve_external_ids(agent_id=granted_by)
 
-        await self._access_service.grant_access(
+        return await self._access_service.get_permissions_detailed(
             document_id=document_id,
-            agent_id=agent_uuid,
-            permission=permission,
-            granted_by=granted_by_uuid,
-            expires_at=expires_at,
+            agent_id=agent_id,
         )
 
-    async def revoke(
+    async def set_permissions(
         self,
-        document_id: UUID,
-        agent_id: str,
-        permission: str,
-        revoked_by: str,
-    ) -> None:
+        document_id: str | UUID,
+        permissions: List[dict],
+        granted_by: str | UUID,
+    ) -> List[Any]:
         """
-        Revoke access to a document.
+        Set permissions for a document in bulk.
+
+        Replaces existing permissions with the provided list.
 
         Args:
-            document_id: Document UUID
-            agent_id: Agent external ID to revoke access from
-            permission: Permission to revoke
-            revoked_by: Agent external ID revoking access
-        """
-        if not self._access_service:
-            raise RuntimeError(
-                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
-            )
-        # Resolve external IDs to UUIDs
-        _, agent_uuid = await self._resolve_external_ids(agent_id=agent_id)
-        _, revoked_by_uuid = await self._resolve_external_ids(agent_id=revoked_by)
-
-        await self._access_service.revoke_access(
-            document_id=document_id,
-            agent_id=agent_uuid,
-            permission=permission,
-            revoked_by=revoked_by_uuid,
-        )
-
-    async def check_permission(
-        self,
-        document_id: UUID,
-        agent_id: str,
-        permission: str,
-    ) -> bool:
-        """
-        Check if an agent has a specific permission on a document.
-
-        Args:
-            document_id: Document UUID
-            agent_id: Agent external ID
-            permission: Permission to check
+            document_id: Document UUID or string
+            permissions: List of permission dictionaries with keys:
+                - agent_id: UUID or string
+                - permission: Permission level (READ, WRITE, DELETE, SHARE, ADMIN)
+                - expires_at: Optional expiration datetime
+            granted_by: UUID or string of agent granting permissions
 
         Returns:
-            bool: True if agent has permission
+            List of created ACL instances
+
+        Example:
+            ```python
+            await vault.set_permissions(
+                document_id=doc_id,
+                permissions=[
+                    {"agent_id": agent1, "permission": "READ"},
+                    {"agent_id": agent2, "permission": "WRITE", "expires_at": datetime(2026, 1, 1)},
+                ],
+                granted_by=admin_id
+            )
+            ```
         """
         if not self._access_service:
             raise RuntimeError(
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
-        # Resolve external IDs to UUIDs
-        _, agent_uuid = await self._resolve_external_ids(agent_id=agent_id)
 
-        return await self._access_service.check_permission(
+        return await self._access_service.set_permissions_bulk(
             document_id=document_id,
-            agent_id=agent_uuid,
-            permission=permission,
-        )
-
-    async def list_accessible_documents(
-        self,
-        agent_id: str,
-        organization_id: str,
-        permission: Optional[str] = None,
-    ):
-        """
-        List documents accessible to an agent.
-
-        Args:
-            agent_id: Agent external ID
-            organization_id: Organization external ID
-            permission: Optional permission filter
-
-        Returns:
-            List[Document]: Accessible documents
-        """
-        if not self._access_service:
-            raise RuntimeError(
-                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
-            )
-        # Resolve external IDs to UUIDs
-        org_uuid, agent_uuid = await self._resolve_external_ids(
-            organization_id=organization_id, agent_id=agent_id
-        )
-
-        return await self._access_service.list_accessible_documents(
-            agent_id=agent_uuid,
-            organization_id=org_uuid,
-            permission=permission,
-        )
-
-    async def get_document_permissions(
-        self,
-        document_id: UUID,
-        agent_id: str,
-    ):
-        """
-        Get all permissions for a document.
-
-        Args:
-            document_id: Document UUID
-            agent_id: Agent external ID (must have ADMIN permission)
-
-        Returns:
-            List[ACL]: Document permissions
-        """
-        if not self._access_service:
-            raise RuntimeError(
-                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
-            )
-        # Resolve external IDs to UUIDs
-        _, agent_uuid = await self._resolve_external_ids(agent_id=agent_id)
-
-        return await self._access_service.get_document_permissions(
-            document_id=document_id,
-            agent_id=agent_uuid,
+            permissions=permissions,
+            granted_by=granted_by,
         )
 
     # Version Management
-
-    async def get_versions(
-        self,
-        document_id: UUID,
-        agent_id: str,
-    ):
-        """
-        Get all versions of a document.
-
-        Args:
-            document_id: Document UUID
-            agent_id: Agent external ID (requester)
-
-        Returns:
-            List[DocumentVersion]: Document versions
-        """
-        if not self._version_service:
-            raise RuntimeError(
-                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
-            )
-        # Resolve external IDs to UUIDs
-        _, agent_uuid = await self._resolve_external_ids(agent_id=agent_id)
-
-        return await self._version_service.list_versions(
-            document_id=document_id,
-            agent_id=agent_uuid,
-        )
 
     async def restore_version(
         self,
@@ -613,36 +540,6 @@ class DocVaultSDK:
             version_number=version_number,
             agent_id=agent_uuid,
             change_description=change_description,
-        )
-
-    async def get_version_info(
-        self,
-        document_id: UUID,
-        version_number: int,
-        agent_id: str,
-    ):
-        """
-        Get information about a specific version.
-
-        Args:
-            document_id: Document UUID
-            version_number: Version number
-            agent_id: Agent external ID (requester)
-
-        Returns:
-            DocumentVersion: Version information
-        """
-        if not self._version_service:
-            raise RuntimeError(
-                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
-            )
-        # Resolve external IDs to UUIDs
-        _, agent_uuid = await self._resolve_external_ids(agent_id=agent_id)
-
-        return await self._version_service.get_version_info(
-            document_id=document_id,
-            version_number=version_number,
-            agent_id=agent_uuid,
         )
 
     # Organization & Agent Management
@@ -722,7 +619,7 @@ class DocVaultSDK:
         Get organization by external ID.
 
         Args:
-            external_id: Organization external ID
+            external_id: Organization UUID (string)
 
         Returns:
             Organization: The organization
@@ -732,18 +629,20 @@ class DocVaultSDK:
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
 
+        # In v2.0, external_id IS the organization id (UUID)
         org_repo = OrganizationRepository(self._db_manager)
-        org = await org_repo.get_by_external_id(external_id)
+        org_uuid = UUID(external_id) if isinstance(external_id, str) else external_id
+        org = await org_repo.get_by_id(org_uuid)
         if not org:
-            raise ValueError(f"Organization with external_id '{external_id}' not found")
+            raise ValueError(f"Organization with ID '{external_id}' not found")
         return org
 
     async def get_agent(self, external_id: str):
         """
-        Get agent by external ID.
+        Get agent by external ID (v2.0: the UUID itself).
 
         Args:
-            external_id: Agent external ID
+            external_id: Agent UUID (string)
 
         Returns:
             Agent: The agent
@@ -753,63 +652,73 @@ class DocVaultSDK:
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
 
+        # In v2.0, external_id IS the agent id (UUID)
         agent_repo = AgentRepository(self._db_manager)
-        agent = await agent_repo.get_by_external_id(external_id)
+        agent_uuid = UUID(external_id) if isinstance(external_id, str) else external_id
+        agent = await agent_repo.get_by_id(agent_uuid)
         if not agent:
-            raise ValueError(f"Agent with external_id '{external_id}' not found")
+            raise ValueError(f"Agent with ID '{external_id}' not found")
         return agent
 
-    # ==========================================================================
-    # v2.0 Methods - Enhanced Document Operations
-    # ==========================================================================
-
-    async def upload_enhanced(
+    async def delete_organization(
         self,
-        file_input: Any,
-        name: str,
-        organization_id: str | UUID,
-        agent_id: str | UUID,
-        description: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        content_type: Optional[str] = None,
-        filename: Optional[str] = None,
-    ):
+        org_id: UUID | str,
+        force: bool = False,
+    ) -> None:
         """
-        Upload document with flexible input support (v2.0).
-
-        Supports file paths, bytes, and binary streams.
+        Delete an organization.
 
         Args:
-            file_input: File path, bytes, or binary stream
-            name: Document display name
-            organization_id: Organization UUID
-            agent_id: Agent UUID
-            description: Optional description
-            tags: Optional tags
-            metadata: Optional metadata
-            content_type: Optional MIME type override
-            filename: Optional filename override
+            org_id: Organization UUID or string
+            force: If True, force delete even if organization has documents (default: False)
 
-        Returns:
-            Document instance
+        Raises:
+            RuntimeError: If SDK not initialized
+            OrganizationNotFoundError: If organization doesn't exist
+            ValidationError: If organization has active documents and force=False
         """
-        if not self._document_service:
+        if not self._organization_service:
             raise RuntimeError(
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
 
-        return await self._document_service.upload_enhanced(
-            file_input=file_input,
-            name=name,
-            organization_id=organization_id,
-            agent_id=agent_id,
-            description=description,
-            tags=tags,
-            metadata=metadata,
-            content_type=content_type,
-            filename=filename,
+        org_uuid = UUID(org_id) if isinstance(org_id, str) else org_id
+        await self._organization_service.delete_organization(
+            org_id=org_uuid,
+            force=force,
         )
+
+    async def remove_agent(
+        self,
+        agent_id: UUID | str,
+        force: bool = False,
+    ) -> None:
+        """
+        Remove an agent from the system.
+
+        Args:
+            agent_id: Agent UUID or string
+            force: If True, force delete even if agent has created documents (default: False)
+
+        Raises:
+            RuntimeError: If SDK not initialized
+            AgentNotFoundError: If agent doesn't exist
+            ValidationError: If agent has active documents and force=False
+        """
+        if not self._agent_service:
+            raise RuntimeError(
+                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
+            )
+
+        agent_uuid = UUID(agent_id) if isinstance(agent_id, str) else agent_id
+        await self._agent_service.remove_agent(
+            agent_id=agent_uuid,
+            force=force,
+        )
+
+    # ==========================================================================
+    # Additional v2.0 Methods
+    # ==========================================================================
 
     async def get_document_details(
         self,
@@ -819,16 +728,16 @@ class DocVaultSDK:
         include_permissions: bool = False,
     ) -> Dict[str, Any]:
         """
-        Get comprehensive document details with version and permission info (v2.0).
+        Get comprehensive document details with version and permission info.
 
         Args:
-            document_id: Document UUID
-            agent_id: Agent UUID
-            include_versions: Include version history
-            include_permissions: Include permission details
+            document_id: Document UUID or string
+            agent_id: Agent UUID or string
+            include_versions: Include version history (default: True)
+            include_permissions: Include permission details (default: False)
 
         Returns:
-            Dictionary with document details
+            Dictionary with document details, versions, and optionally permissions
         """
         if not self._document_service:
             raise RuntimeError(
@@ -842,213 +751,6 @@ class DocVaultSDK:
             include_permissions=include_permissions,
         )
 
-    async def list_documents_paginated(
-        self,
-        organization_id: str | UUID,
-        agent_id: str | UUID,
-        status: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        limit: int = 50,
-        offset: int = 0,
-        sort_by: str = "created_at",
-        sort_order: str = "desc",
-    ) -> Dict[str, Any]:
-        """
-        List documents with pagination and filtering (v2.0).
-
-        Args:
-            organization_id: Organization UUID
-            agent_id: Agent UUID
-            status: Optional status filter
-            tags: Optional tag filter
-            limit: Maximum per page
-            offset: Page offset
-            sort_by: Sort field
-            sort_order: Sort direction
-
-        Returns:
-            Dictionary with documents and pagination metadata
-        """
-        if not self._document_service:
-            raise RuntimeError(
-                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
-            )
-
-        return await self._document_service.list_documents_paginated(
-            organization_id=organization_id,
-            agent_id=agent_id,
-            status=status,
-            tags=tags,
-            limit=limit,
-            offset=offset,
-            sort_by=sort_by,
-            sort_order=sort_order,
-        )
-
-    async def search_documents_enhanced(
-        self,
-        query: str,
-        organization_id: str | UUID,
-        agent_id: str | UUID,
-        prefix: Optional[str] = None,
-        status: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        limit: int = 20,
-        offset: int = 0,
-    ) -> Dict[str, Any]:
-        """
-        Enhanced document search with filtering (v2.0).
-
-        Args:
-            query: Search query
-            organization_id: Organization UUID
-            agent_id: Agent UUID
-            prefix: Optional prefix filter
-            status: Optional status filter
-            tags: Optional tag filter
-            limit: Maximum results
-            offset: Result offset
-
-        Returns:
-            Dictionary with search results
-        """
-        if not self._document_service:
-            raise RuntimeError(
-                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
-            )
-
-        return await self._document_service.search_documents_enhanced(
-            query=query,
-            organization_id=organization_id,
-            agent_id=agent_id,
-            prefix=prefix,
-            status=status,
-            tags=tags,
-            limit=limit,
-            offset=offset,
-        )
-
-    async def set_permissions_bulk(
-        self,
-        document_id: str | UUID,
-        permissions: List[dict],
-        granted_by: str | UUID,
-    ) -> List[Any]:
-        """
-        Set multiple permissions in bulk (v2.0).
-
-        Args:
-            document_id: Document UUID
-            permissions: List of permission dicts
-            granted_by: Granting agent UUID
-
-        Returns:
-            List of ACL instances
-        """
-        if not self._access_service:
-            raise RuntimeError(
-                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
-            )
-
-        return await self._access_service.set_permissions_bulk(
-            document_id=document_id,
-            permissions=permissions,
-            granted_by=granted_by,
-        )
-
-    async def get_permissions_detailed(
-        self,
-        document_id: str | UUID,
-        agent_id: Optional[str | UUID] = None,
-    ) -> Dict[str, Any]:
-        """
-        Get detailed permission information (v2.0).
-
-        Args:
-            document_id: Document UUID
-            agent_id: Optional agent filter
-
-        Returns:
-            Dictionary with detailed permissions
-        """
-        if not self._access_service:
-            raise RuntimeError(
-                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
-            )
-
-        return await self._access_service.get_permissions_detailed(
-            document_id=document_id,
-            agent_id=agent_id,
-        )
-
-    async def check_permissions_multi(
-        self,
-        document_id: str | UUID,
-        agent_id: str | UUID,
-        permissions: List[str],
-    ) -> Dict[str, Any]:
-        """
-        Check multiple permissions at once (v2.0).
-
-        Args:
-            document_id: Document UUID
-            agent_id: Agent UUID
-            permissions: List of permissions to check
-
-        Returns:
-            Dictionary with check results
-        """
-        if not self._access_service:
-            raise RuntimeError(
-                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
-            )
-
-        return await self._access_service.check_permissions_multi(
-            document_id=document_id,
-            agent_id=agent_id,
-            permissions=permissions,
-        )
-
-    async def replace_document_content(
-        self,
-        document_id: str | UUID,
-        file_input: Any,
-        agent_id: str | UUID,
-        change_description: str = "Content updated",
-        create_version: bool = True,
-        filename: Optional[str] = None,
-        content_type: Optional[str] = None,
-    ):
-        """
-        Replace document content with optional version creation (v2.0).
-
-        Args:
-            document_id: Document UUID
-            file_input: File path, bytes, or binary stream
-            agent_id: Agent UUID
-            change_description: Description of the change (default: "Content updated")
-            create_version: Whether to create version before replacement
-            filename: Optional filename override
-            content_type: Optional MIME type override
-
-        Returns:
-            Document instance
-        """
-        if not self._document_service:
-            raise RuntimeError(
-                "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
-            )
-
-        return await self._document_service.replace_document_content(
-            document_id=document_id,
-            file_input=file_input,
-            agent_id=agent_id,
-            change_description=change_description,
-            create_version=create_version,
-            filename=filename,
-            content_type=content_type,
-        )
-
     async def transfer_ownership(
         self,
         document_id: str | UUID,
@@ -1056,12 +758,12 @@ class DocVaultSDK:
         transferred_by: str | UUID,
     ):
         """
-        Transfer document ownership to another agent (v2.0).
+        Transfer document ownership to another agent.
 
         Args:
-            document_id: Document UUID
-            new_owner_id: New owner agent UUID
-            transferred_by: Transferring agent UUID (must be current owner)
+            document_id: Document UUID or string
+            new_owner_id: New owner agent UUID or string
+            transferred_by: Transferring agent UUID or string (must be current owner)
 
         Returns:
             Updated Document instance

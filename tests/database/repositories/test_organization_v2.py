@@ -18,9 +18,9 @@ from doc_vault.exceptions import DatabaseError
 
 
 @pytest.fixture
-async def org_repo(postgres_manager):
+async def org_repo(db_manager):
     """Create an organization repository."""
-    return OrganizationRepository(postgres_manager)
+    return OrganizationRepository(db_manager)
 
 
 class TestOrganizationCreate:
@@ -234,3 +234,4 @@ class TestOrganizationErrors:
         """Test that invalid UUID string raises error."""
         with pytest.raises(ValueError):
             await org_repo.get_by_id("not-a-uuid")
+

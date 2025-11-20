@@ -9,6 +9,12 @@
 
 DocVault provides a complete solution for document upload, management, version control, and access control. It supports multi-organization isolation, role-based permissions, and integrates seamlessly with PostgreSQL and MinIO/S3 storage.
 
+> **📢 v2.0.0 Released!** This is a major release with breaking changes. See [CHANGELOG.md](./CHANGELOG.md) for migration guide. Key changes:
+> - UUID-based entity model (organizations/agents)
+> - Unified permissions API (`set_permissions`, `get_permissions`)
+> - Hierarchical document organization
+> - Removed: `share()`, `revoke()`, `check_permission()`, `get_versions()`
+
 ## ✨ Features
 
 - **📁 Document Management**: Upload, download, update, and delete documents
@@ -239,7 +245,7 @@ DocVault uses a three-layer architecture:
 ┌─────────────────────────────────────────────────────┐
 │                   SDK API Layer                     │
 │              (core.py - DocVaultSDK)                │
-│  High-level methods: upload(), download(), share()  │
+│  High-level methods: upload(), download(), list()   │
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
@@ -323,39 +329,36 @@ results = await vault.search(
 ### Access Control
 
 ```python
-# Share document with permissions
-await vault.share(
+# Set permissions for document (v2.0 API)
+await vault.set_permissions(
     document_id=document.id,
-    agent_id="agent-789",
-    permission="READ",  # READ, WRITE, DELETE, SHARE, ADMIN
-    granted_by="agent-456",
-    expires_at=None  # Optional expiration
+    permissions=[
+        {"agent_id": "agent-789", "permission": "READ"},
+        {"agent_id": "agent-012", "permission": "WRITE"},
+    ],
+    granted_by="agent-456"
 )
 
-# Check permissions
-has_access = await vault.check_permission(
+# Get permissions
+perms_result = await vault.get_permissions(
     document_id=document.id,
-    agent_id="agent-789",
-    permission="READ"
+    agent_id="agent-789"
 )
-
-# Revoke access
-await vault.revoke(
-    document_id=document.id,
-    agent_id="agent-789",
-    permission="READ",
-    revoked_by="agent-456"
-)
+perms_list = perms_result.get("permissions", [])
+for p in perms_list:
+    print(f"Permission: {p['permission']}")
 ```
 
 ### Version Management
 
 ```python
-# List versions
-versions = await vault.get_versions(
+# Get document details with versions (v2.0 API)
+details = await vault.get_document_details(
     document_id=document.id,
-    agent_id="agent-456"
+    agent_id="agent-456",
+    include_versions=True
 )
+versions = details.get("versions", [])
 
 # Restore previous version
 restored = await vault.restore_version(
