@@ -1,6 +1,15 @@
-# DocVault SDK v2.1 API Reference
+# DocVault SDK v2.2 API Reference
 
-Complete API reference for DocVault SDK v2.1.
+Complete API reference for DocVault SDK v2.2.
+
+**What's New in v2.2:**
+- 🎯 **100% Type Safety**: All methods return explicit Pydantic models instead of `Dict[str, Any]`
+- 📦 **Response Models**: `DocumentListResponse`, `SearchResponse`, `DocumentDetails`, `PermissionListResponse`, `OwnershipTransferResponse`
+- 🧠 **Smart Upload Detection**: Automatic detection of file paths vs. text content in uploads
+- 🔒 **Model-Only Permissions**: `set_permissions()` now requires `List[PermissionGrant]` (no dicts)
+- 🧹 **Cleaner API**: Removed legacy v1.x compatibility helpers
+- ✨ **Better IDE Support**: Full autocomplete on all response fields
+- See [MIGRATION_v2.1_to_v2.2.md](./MIGRATION_v2.1_to_v2.2.md) for migration guide
 
 **What's New in v2.1:**
 - 🔒 **Enhanced Security**: Permission viewing restricted to document owners (ADMIN permission)
@@ -23,6 +32,7 @@ Complete API reference for DocVault SDK v2.1.
 ## Table of Contents
 
 - [Initialization](#initialization)
+- [Response Models (v2.2)](#response-models-v22)
 - [Organization & Agent Management](#organization--agent-management)
 - [Document Operations](#document-operations)
 - [Access Control & Permissions](#access-control--permissions)
@@ -70,6 +80,170 @@ async with DocVaultSDK(config=config) as vault:
 ```
 
 **Important:** Always use the SDK as an async context manager to ensure proper resource cleanup.
+
+---
+
+## Response Models (v2.2)
+
+Starting in v2.2, all SDK methods return explicit Pydantic models instead of generic dictionaries. This provides:
+- ✅ **Type Safety**: IDE autocomplete and type checking
+- ✅ **Validation**: Automatic field validation
+- ✅ **Documentation**: Self-documenting response structures
+- ✅ **Compatibility**: Convert to dict with `.model_dump()` if needed
+
+### PaginationMeta
+
+Pagination metadata included in list/search responses.
+
+```python
+from doc_vault.database.schemas import PaginationMeta
+
+class PaginationMeta(BaseModel):
+    total: int          # Total number of items
+    limit: int          # Items per page
+    offset: int         # Starting offset
+    has_more: bool      # Whether more items exist
+```
+
+### DocumentListResponse
+
+Response model for `list_docs()` method.
+
+```python
+from doc_vault.database.schemas import DocumentListResponse
+
+class DocumentListResponse(BaseModel):
+    documents: List[Document]           # List of documents
+    pagination: PaginationMeta          # Pagination information
+    filters: Dict[str, Any]             # Applied filters
+```
+
+**Example:**
+```python
+result = await vault.list_docs(org_id=org, agent_id=agent, limit=10)
+
+# Type-safe attribute access
+for doc in result.documents:
+    print(doc.name)
+
+print(f"Total: {result.pagination.total}")
+print(f"Has more: {result.pagination.has_more}")
+
+# Convert to dict if needed
+result_dict = result.model_dump()
+```
+
+### SearchResponse
+
+Response model for `search()` method.
+
+```python
+from doc_vault.database.schemas import SearchResponse
+
+class SearchResponse(BaseModel):
+    documents: List[Document]           # Matching documents
+    query: str                          # Search query
+    pagination: PaginationMeta          # Pagination information
+    filters: Dict[str, Any]             # Applied filters
+```
+
+**Example:**
+```python
+result = await vault.search(query="report", org_id=org, agent_id=agent)
+
+print(f"Query: {result.query}")
+print(f"Found {result.pagination.total} results")
+
+for doc in result.documents:
+    print(f"- {doc.name}")
+```
+
+### DocumentDetails
+
+Response model for `get_document_details()` method.
+
+```python
+from doc_vault.database.schemas import DocumentDetails
+
+class DocumentDetails(BaseModel):
+    document: Document                      # Document metadata
+    versions: Optional[List[DocumentVersion]] = None  # Version history (if requested)
+    permissions: Optional[List[DocumentACL]] = None   # Permissions (if ADMIN and requested)
+    version_count: int                      # Total number of versions
+    current_version: int                    # Current version number
+```
+
+**Example:**
+```python
+details = await vault.get_document_details(
+    document_id=doc_id,
+    agent_id=agent_id,
+    include_versions=True
+)
+
+print(f"Document: {details.document.name}")
+print(f"Current version: {details.current_version}")
+print(f"Total versions: {details.version_count}")
+
+if details.versions:
+    for v in details.versions:
+        print(f"  v{v.version_number}: {v.change_description}")
+```
+
+### PermissionListResponse
+
+Response model for `get_permissions()` method.
+
+```python
+from doc_vault.database.schemas import PermissionListResponse
+
+class PermissionListResponse(BaseModel):
+    document_id: UUID                   # Document UUID
+    permissions: List[DocumentACL]      # List of permissions
+    total: int                          # Total permission count
+    requested_by: Optional[UUID] = None # Agent who requested
+    requested_at: datetime              # When retrieved
+```
+
+**Example:**
+```python
+perms = await vault.get_permissions(document_id=doc_id)
+
+print(f"Document has {perms.total} permissions")
+print(f"Requested by: {perms.requested_by}")
+
+for acl in perms.permissions:
+    print(f"{acl.agent_id}: {acl.permission}")
+```
+
+### OwnershipTransferResponse
+
+Response model for `transfer_ownership()` method.
+
+```python
+from doc_vault.database.schemas import OwnershipTransferResponse
+
+class OwnershipTransferResponse(BaseModel):
+    document: Document                  # Updated document
+    old_owner: UUID                     # Previous owner agent ID
+    new_owner: UUID                     # New owner agent ID
+    transferred_by: UUID                # Agent who performed transfer
+    transferred_at: datetime            # Transfer timestamp
+    new_permissions: List[DocumentACL]  # Updated permission list
+```
+
+**Example:**
+```python
+result = await vault.transfer_ownership(
+    document_id=doc_id,
+    new_owner_id=new_owner,
+    agent_id=current_owner
+)
+
+print(f"Ownership transferred from {result.old_owner} to {result.new_owner}")
+print(f"Transferred at: {result.transferred_at}")
+print(f"New permissions count: {len(result.new_permissions)}")
+```
 
 ---
 
@@ -229,6 +403,10 @@ async def upload(
 ) -> Document
 ```
 
+**v2.2 Enhancements:**
+- **Smart string detection:** Automatically detects file paths vs. text content
+- **Direct text upload:** No temp files needed for text content
+
 **v2.0 Enhancements:**
 - **Multiple input types:** file paths (str), bytes, binary streams (BinaryIO)
 - **Hierarchical organization:** `prefix` parameter for organizing documents
@@ -236,7 +414,8 @@ async def upload(
 
 **Parameters:**
 - `file_path` (str | bytes | BinaryIO): Document content
-  - `str`: Path to file on disk
+  - `str` (file path): If path exists on disk → reads file content
+  - `str` (text content): If path doesn't exist → treats as text content ⭐ NEW in v2.2
   - `bytes`: In-memory document content
   - `BinaryIO`: Binary stream (e.g., `open(file, 'rb')`)
 - `name` (str): Display name for the document
@@ -252,7 +431,15 @@ async def upload(
 
 **Examples:**
 ```python
-# Upload from file path
+# ⭐ NEW in v2.2: Upload text content directly (no temp file needed!)
+doc = await vault.upload(
+    file_path="This is my document content",  # Text content
+    name="Quick Note",
+    organization_id=org_id,
+    agent_id=agent_id
+)
+
+# Upload from file path (works if file exists)
 doc = await vault.upload(
     file_path="/path/to/report.pdf",
     name="Q1 Report",
@@ -288,6 +475,12 @@ doc = await vault.upload(
     replace_existing=existing_doc_id  # Replaces without versioning
 )
 ```
+
+**Smart String Detection (v2.2):**
+- If `file_path` is a string and the path exists on disk → reads the file
+- If `file_path` is a string and the path doesn't exist → treats as text content
+- Text content is automatically encoded to UTF-8 and gets default filename "document.txt"
+- For explicit control, use `bytes` or `BinaryIO` types
 
 **Raises:** `AgentNotFoundError`, `OrganizationNotFoundError`, `FileNotFoundError`, `PermissionDeniedError`
 
@@ -426,7 +619,7 @@ await vault.delete(document_id=doc_id, agent_id=agent_id, hard_delete=True)
 
 ---
 
-### list_docs() ⭐ UPDATED
+### list_docs() ⭐ UPDATED (v2.2)
 
 List documents with enhanced filtering and pagination.
 
@@ -434,17 +627,22 @@ List documents with enhanced filtering and pagination.
 async def list_docs(
     organization_id: UUID | str,
     agent_id: UUID | str,
-    prefix: Optional[str] = None,  # ⭐ NEW
-    recursive: bool = False,  # ⭐ NEW
-    max_depth: Optional[int] = None,  # ⭐ NEW
+    prefix: Optional[str] = None,  # ⭐ NEW in v2.0
+    recursive: bool = False,  # ⭐ NEW in v2.0
+    max_depth: Optional[int] = None,  # ⭐ NEW in v2.0
     status: Optional[str] = None,
     tags: Optional[List[str]] = None,
-    sort_by: str = "created_at",  # ⭐ NEW
-    sort_order: str = "desc",  # ⭐ NEW
+    sort_by: str = "created_at",  # ⭐ NEW in v2.0
+    sort_order: str = "desc",  # ⭐ NEW in v2.0
     limit: int = 50,
     offset: int = 0,
-) -> List[Document]
+) -> DocumentListResponse  # ⭐ CHANGED in v2.2: was List[Document]
 ```
+
+**v2.2 Changes:**
+- 🎯 **Type-Safe Response**: Returns `DocumentListResponse` model instead of `Dict[str, Any]`
+- ✨ **Better IDE Support**: Full autocomplete on response fields
+- 📊 **Rich Metadata**: Includes pagination info and applied filters
 
 **v2.0 Enhancements:**
 - Hierarchical listing with `prefix`, `recursive`, `max_depth`
@@ -464,13 +662,25 @@ async def list_docs(
 - `limit` (int): Max results (default: 50)
 - `offset` (int): Pagination offset
 
+**Returns:** `DocumentListResponse` - Type-safe response with documents and metadata
+
 **Examples:**
 ```python
-# List all documents
-docs = await vault.list_docs(
+# ⭐ v2.2: Type-safe response with full metadata
+result = await vault.list_docs(
     organization_id=org_id,
-    agent_id=agent_id
+    agent_id=agent_id,
+    limit=10
 )
+
+# Access documents via model attributes
+for doc in result.documents:
+    print(doc.name)
+
+# Access pagination metadata
+print(f"Total documents: {result.pagination.total}")
+print(f"Has more: {result.pagination.has_more}")
+print(f"Showing {result.pagination.limit} of {result.pagination.total}")
 
 # List documents in specific folder
 reports = await vault.list_docs(
@@ -498,11 +708,15 @@ filtered = await vault.list_docs(
     sort_order="asc",
     limit=20
 )
+
+# Convert to dict if needed (v2.1 compatibility)
+result_dict = result.model_dump()
+docs_list = result_dict["documents"]
 ```
 
 ---
 
-### search()
+### search() ⭐ UPDATED (v2.2)
 
 Search documents by text query.
 
@@ -511,10 +725,15 @@ async def search(
     query: str,
     organization_id: UUID | str,
     agent_id: UUID | str,
-    prefix: Optional[str] = None,  # ⭐ NEW
+    prefix: Optional[str] = None,  # ⭐ NEW in v2.0
     limit: int = 20,
-) -> List[Document]
+) -> SearchResponse  # ⭐ CHANGED in v2.2: was List[Document]
 ```
+
+**v2.2 Changes:**
+- 🎯 **Type-Safe Response**: Returns `SearchResponse` model with query info and metadata
+- ✨ **Query Tracking**: Response includes the original query string
+- 📊 **Pagination Support**: Full pagination metadata included
 
 **v2.0 Enhancement:** Added `prefix` parameter to scope search
 
@@ -525,20 +744,34 @@ async def search(
 - `prefix` (Optional[str]): Limit search to prefix
 - `limit` (int): Max results
 
+**Returns:** `SearchResponse` - Type-safe response with search results and metadata
+
 **Example:**
 ```python
-results = await vault.search(
+# ⭐ v2.2: Type-safe search with metadata
+result = await vault.search(
     query="financial report",
     organization_id=org_id,
     agent_id=agent_id,
     prefix="/reports/2025",
     limit=10
 )
+
+# Access results via model attributes
+print(f"Query: {result.query}")
+print(f"Found {result.pagination.total} results")
+
+for doc in result.documents:
+    print(f"- {doc.name}")
+
+# Check if there are more results
+if result.pagination.has_more:
+    print("More results available")
 ```
 
 ---
 
-### get_document_details() ⭐ NEW (v2.1 Updated)
+### get_document_details() ⭐ NEW (v2.2 Updated)
 
 Get comprehensive document information including versions and permissions.
 
@@ -548,8 +781,13 @@ async def get_document_details(
     agent_id: UUID | str,
     include_versions: bool = True,
     include_permissions: bool = False,  # 🔒 v2.1: Requires ADMIN permission
-) -> Dict[str, Any]
+) -> DocumentDetails  # ⭐ CHANGED in v2.2: was Dict[str, Any]
 ```
+
+**v2.2 Changes:**
+- 🎯 **Type-Safe Response**: Returns `DocumentDetails` model with explicit fields
+- ✨ **Version Metadata**: Includes `version_count` and `current_version` fields
+- 📊 **Optional Fields**: Properly typed optional `versions` and `permissions`
 
 **v2.1 Security Enhancement:**
 - 🔒 **Permission Viewing Restricted**: Only document owners (ADMIN permission) can view permissions
@@ -565,10 +803,12 @@ async def get_document_details(
 - `include_permissions` (bool): Include permission details (default: False)
   - ⚠️ **Requires ADMIN permission** on the document
 
-**Returns:** Dictionary with:
-- `document`: Document details (always included)
-- `versions`: List of versions (if `include_versions=True`)
-- `permissions`: Permission list (if `include_permissions=True` **and** agent has ADMIN)
+**Returns:** `DocumentDetails` - Type-safe response with:
+- `document`: Document metadata (Document model)
+- `versions`: Optional list of versions (if requested)
+- `permissions`: Optional list of permissions (if ADMIN and requested)
+- `version_count`: Total number of versions
+- `current_version`: Current version number
 
 **Security Notes:**
 - Any agent with READ permission can get document details and versions
@@ -577,20 +817,22 @@ async def get_document_details(
 
 **Example:**
 ```python
-# Get document details with versions (any agent with READ access)
+# ⭐ v2.2: Type-safe response with rich metadata
 details = await vault.get_document_details(
     document_id=doc_id,
     agent_id=agent_id,
-    include_versions=True,
-    include_permissions=False  # Safe for non-owners
+    include_versions=True
 )
 
-print(f"Document: {details['document']['name']}")
-print(f"Current version: {details['document']['current_version']}")
-print(f"Total versions: {len(details.get('versions', []))}")
+# Access via model attributes
+print(f"Document: {details.document.name}")
+print(f"Current version: {details.current_version}")
+print(f"Total versions: {details.version_count}")
 
-for version in details.get('versions', []):
-    print(f"  v{version['version_number']}: {version['change_description']}")
+# Type-safe access to versions
+if details.versions:
+    for v in details.versions:
+        print(f"  v{v.version_number}: {v.change_description}")
 
 # Get permissions (only for document owner/ADMIN)
 try:
@@ -599,7 +841,11 @@ try:
         agent_id=owner_id,  # Must be owner/ADMIN
         include_permissions=True
     )
-    print(f"Permissions: {details_with_perms['permissions']}")
+    # Access permissions via model attribute
+    if details_with_perms.permissions:
+        print(f"Total permissions: {len(details_with_perms.permissions)}")
+        for perm in details_with_perms.permissions:
+            print(f"  {perm.agent_id}: {perm.permission}")
 except PermissionDeniedError:
     print("Only document owners can view permissions")
 ```
@@ -613,7 +859,7 @@ except PermissionDeniedError:
 
 ## Access Control & Permissions
 
-### get_permissions() ⭐ NEW (v2.1 Updated)
+### get_permissions() ⭐ NEW (v2.2 Updated)
 
 Get permissions for a document.
 
@@ -621,8 +867,13 @@ Get permissions for a document.
 async def get_permissions(
     document_id: UUID | str,
     agent_id: Optional[UUID | str] = None,
-) -> Dict[str, Any]
+) -> PermissionListResponse  # ⭐ CHANGED in v2.2: was Dict[str, Any]
 ```
+
+**v2.2 Changes:**
+- 🎯 **Type-Safe Response**: Returns `PermissionListResponse` model
+- ✨ **Request Metadata**: Includes `requested_by` and `requested_at` fields
+- 📊 **Total Count**: Direct access to `total` field
 
 **v2.1 Changes:**
 - ❌ Removed unused `org_id` parameter (permissions are document-scoped)
@@ -635,35 +886,25 @@ async def get_permissions(
 - `document_id` (UUID | str): Document UUID
 - `agent_id` (Optional[UUID | str]): Agent UUID to filter permissions for specific agent (None = all permissions)
 
-**Returns:** Dictionary with permissions and metadata:
-```python
-{
-    "document_id": str,
-    "permissions": [
-        {
-            "agent_id": str,
-            "permission": str,
-            "granted_by": str,
-            "granted_at": datetime,
-            "expires_at": Optional[datetime],
-            "metadata": Optional[Dict]
-        },
-        ...
-    ],
-    "count": int
-}
-```
+**Returns:** `PermissionListResponse` - Type-safe response with:
+- `document_id`: Document UUID
+- `permissions`: List of DocumentACL models
+- `total`: Total permission count
+- `requested_by`: Agent who requested (if provided)
+- `requested_at`: Timestamp of request
 
 **Example:**
 ```python
-# Get all permissions for a document
-perms = await vault.get_permissions(
-    document_id=doc_id
-)
+# ⭐ v2.2: Type-safe response
+perms = await vault.get_permissions(document_id=doc_id)
 
-print(f"Total permissions: {perms['count']}")
-for perm in perms['permissions']:
-    print(f"{perm['agent_id']}: {perm['permission']}")
+# Access via model attributes
+print(f"Document: {perms.document_id}")
+print(f"Total permissions: {perms.total}")
+print(f"Requested at: {perms.requested_at}")
+
+for acl in perms.permissions:
+    print(f"{acl.agent_id}: {acl.permission}")
 
 # Get permissions for specific agent
 agent_perms = await vault.get_permissions(
@@ -671,8 +912,8 @@ agent_perms = await vault.get_permissions(
     agent_id=agent_id
 )
 
-if agent_perms['permissions']:
-    print(f"Agent has {len(agent_perms['permissions'])} permissions")
+if agent_perms.permissions:
+    print(f"Agent has {agent_perms.total} permissions")
 ```
 
 **Raises:**
@@ -681,23 +922,27 @@ if agent_perms['permissions']:
 
 ---
 
-### set_permissions() ⭐ NEW (v2.1 Updated)
+### set_permissions() ⭐ NEW (v2.2 Updated)
 
 Set or update permissions for a document in bulk.
 
 ```python
 async def set_permissions(
     document_id: UUID | str,
-    permissions: List[PermissionGrant],  # 🎯 v2.1: Now uses typed model
+    permissions: List[PermissionGrant],  # ⭐ v2.2: Model-only (no dicts)
     granted_by: UUID | str,
 ) -> List[DocumentACL]
 ```
+
+**v2.2 Changes:**
+- 🔒 **Model-Only**: Now **only** accepts `List[PermissionGrant]` (no dict support)
+- ✅ **Type Safety**: Full type checking at compile time
+- 💡 **Cleaner API**: Removed dict-to-model conversion logic
 
 **v2.1 Changes:**
 - 🎯 **Type Safety**: Now accepts `List[PermissionGrant]` instead of `List[dict]`
 - ✅ **Validation**: Automatic field validation through Pydantic
 - 💡 **Better IDE Support**: Full autocomplete and type hints
-- 🔄 **Backward Compatible**: Still accepts `List[dict]` format
 - ❌ Removed unused `org_id` parameter
 
 **Replaces:** `share()`, `revoke()` from v1.x
@@ -730,7 +975,7 @@ class PermissionGrant(BaseModel):
 ```python
 from doc_vault.database.schemas.permission import PermissionGrant
 
-# 🎯 v2.1 Recommended: Using PermissionGrant model
+# ⭐ v2.2 Required: Using PermissionGrant model (dict no longer supported)
 await vault.set_permissions(
     document_id=doc_id,
     permissions=[
@@ -738,15 +983,6 @@ await vault.set_permissions(
             agent_id=agent_id,
             permission="READ"
         )
-    ],
-    granted_by=admin_id
-)
-
-# 🔄 Backward Compatible: Using dict (still works)
-await vault.set_permissions(
-    document_id=doc_id,
-    permissions=[
-        {"agent_id": str(agent_id), "permission": "READ"}
     ],
     granted_by=admin_id
 )
@@ -777,6 +1013,14 @@ await vault.set_permissions(
     ],
     granted_by=admin_id
 )
+
+# ❌ v2.2: Dict format NO LONGER SUPPORTED
+# This will raise a type error:
+# await vault.set_permissions(
+#     document_id=doc_id,
+#     permissions=[{"agent_id": agent_id, "permission": "READ"}],  # ❌ Error!
+#     granted_by=admin_id
+# )
 ```
 
 **Permission Levels:**

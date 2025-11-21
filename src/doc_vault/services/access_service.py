@@ -16,7 +16,10 @@ from doc_vault.database.repositories.document import DocumentRepository
 from doc_vault.database.repositories.organization import OrganizationRepository
 from doc_vault.database.schemas.acl import DocumentACL, DocumentACLCreate
 from doc_vault.database.schemas.document import Document
-from doc_vault.database.schemas.responses import PermissionListResponse
+from doc_vault.database.schemas.responses import (
+    OwnershipTransferResponse,
+    PermissionListResponse,
+)
 from doc_vault.exceptions import (
     AgentNotFoundError,
     DocumentNotFoundError,
@@ -727,52 +730,58 @@ class AccessService:
     async def transfer_ownership(
         self,
         document_id: str | UUID,
-        from_agent_id: str | UUID,
-        to_agent_id: str | UUID,
-        authorized_by: str | UUID,
-    ) -> List[DocumentACL]:
+        new_owner_id: str | UUID,
+        transferred_by: str | UUID,
+    ) -> OwnershipTransferResponse:
         """
-        Transfer document ownership from one agent to another (v2.0).
+        Transfer document ownership to another agent (v2.2).
 
         Removes ADMIN permission from old owner and grants it to new owner.
 
         Args:
             document_id: Document UUID
-            from_agent_id: Current owner agent UUID
-            to_agent_id: New owner agent UUID
-            authorized_by: Agent UUID authorizing transfer (must be current owner or admin)
+            new_owner_id: New owner agent UUID
+            transferred_by: Agent UUID performing transfer (must be current owner)
 
         Returns:
-            List of updated ACL entries
+            OwnershipTransferResponse with document, old/new owners, and permissions
 
         Raises:
             DocumentNotFoundError: If document doesn't exist
-            PermissionDeniedError: If not authorized to transfer
+            AgentNotFoundError: If new_owner_id or transferred_by agent doesn't exist
+            PermissionDeniedError: If transferred_by is not authorized to transfer
         """
         # Convert to UUIDs
         if isinstance(document_id, str):
             document_id = UUID(document_id)
-        if isinstance(from_agent_id, str):
-            from_agent_id = UUID(from_agent_id)
-        if isinstance(to_agent_id, str):
-            to_agent_id = UUID(to_agent_id)
-        if isinstance(authorized_by, str):
-            authorized_by = UUID(authorized_by)
+        if isinstance(new_owner_id, str):
+            new_owner_id = UUID(new_owner_id)
+        if isinstance(transferred_by, str):
+            transferred_by = UUID(transferred_by)
 
         # Validate document
         doc = await self.document_repo.get_by_id(document_id)
         if not doc:
             raise DocumentNotFoundError(f"Document {document_id} not found")
 
-        # Check authorization
-        is_owner = from_agent_id == authorized_by
+        # Validate agents exist
+        new_owner = await self.agent_repo.get_by_id(new_owner_id)
+        if not new_owner:
+            raise AgentNotFoundError(f"Agent {new_owner_id} not found")
+
+        transferring_agent = await self.agent_repo.get_by_id(transferred_by)
+        if not transferring_agent:
+            raise AgentNotFoundError(f"Agent {transferred_by} not found")
+
+        # Check authorization - must be current owner
+        old_owner_id = doc.created_by
         is_admin = await self.acl_repo.check_permission(
-            document_id, authorized_by, "ADMIN"
+            document_id, transferred_by, "ADMIN"
         )
 
-        if not (is_owner or is_admin):
+        if not is_admin:
             raise PermissionDeniedError(
-                f"Agent {authorized_by} is not authorized to transfer ownership"
+                f"Agent {transferred_by} is not authorized to transfer ownership (lacks ADMIN permission)"
             )
 
         # Perform transfer
@@ -780,20 +789,32 @@ class AccessService:
             async with conn.transaction():
                 # Remove ADMIN from old owner
                 await self.acl_repo.delete_by_document_agent_permission(
-                    document_id, from_agent_id, "ADMIN"
+                    document_id, old_owner_id, "ADMIN"
                 )
 
                 # Grant ADMIN to new owner
+                granted_at = datetime.utcnow()
                 acl_create = DocumentACLCreate(
                     document_id=document_id,
-                    agent_id=to_agent_id,
+                    agent_id=new_owner_id,
                     permission="ADMIN",
-                    granted_by=authorized_by,
+                    granted_by=transferred_by,
                 )
-                new_admin = await self.acl_repo.create(acl_create)
+                new_admin_acl = await self.acl_repo.create(acl_create)
 
                 logger.info(
-                    f"Transferred ownership of {document_id} from {from_agent_id} to {to_agent_id}"
+                    f"Transferred ownership of {document_id} from {old_owner_id} to {new_owner_id}"
                 )
 
-                return [new_admin]
+                # Get all current permissions for response
+                all_permissions = await self.acl_repo.get_by_document(document_id)
+
+                # Return OwnershipTransferResponse
+                return OwnershipTransferResponse(
+                    document=doc,
+                    old_owner=old_owner_id,
+                    new_owner=new_owner_id,
+                    transferred_by=transferred_by,
+                    transferred_at=granted_at,
+                    new_permissions=all_permissions,
+                )

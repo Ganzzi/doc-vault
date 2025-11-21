@@ -1,19 +1,29 @@
 """
-Access control example for DocVault SDK v2.0.
+Access control example for DocVault SDK v2.2.
 
 This example demonstrates advanced access control features:
-- Bulk permission management with set_permissions()
-- Permission querying with get_permissions()
-- Managing access control lists
+- Bulk permission management with set_permissions() and type-safe models
+- Permission querying with get_permissions() and type-safe responses
+- Managing access control lists with PermissionListResponse
 - Different permission levels (READ, WRITE, DELETE, SHARE)
+- Type-safe PermissionGrant models (required in v2.2)
+
+Key v2.2 features:
+- Model-only permission API (PermissionGrant required)
+- Type-safe PermissionListResponse
+- Type-safe DocumentListResponse for accessible documents
 """
 
 import asyncio
 import tempfile
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from doc_vault import DocVaultSDK
+
+if TYPE_CHECKING:
+    from doc_vault.database.schemas import PermissionListResponse, DocumentListResponse
 
 
 async def main():
@@ -112,9 +122,12 @@ async def main():
             manager_perms_result = await vault.get_permissions(
                 document_id=document.id, agent_id=manager_id
             )
-            manager_perms = manager_perms_result.get("permissions", [])
+            # v2.2: Type-safe access
             for perm_level in ["READ", "WRITE", "DELETE", "SHARE"]:
-                has_perm = any(p["permission"] == perm_level for p in manager_perms)
+                has_perm = any(
+                    acl.permission == perm_level
+                    for acl in manager_perms_result.permissions
+                )
                 print(f"  {perm_level}: {'[OK]' if has_perm else '[NO]'}")
 
             # Check employee permissions
@@ -122,9 +135,12 @@ async def main():
             employee_perms_result = await vault.get_permissions(
                 document_id=document.id, agent_id=employee_id
             )
-            employee_perms = employee_perms_result.get("permissions", [])
+            # v2.2: Type-safe access
             for perm_level in ["READ", "WRITE", "DELETE", "SHARE"]:
-                has_perm = any(p["permission"] == perm_level for p in employee_perms)
+                has_perm = any(
+                    acl.permission == perm_level
+                    for acl in employee_perms_result.permissions
+                )
                 print(f"  {perm_level}: {'[OK]' if has_perm else '[NO]'}")
 
             # Grant permissions using bulk set_permissions
@@ -170,9 +186,12 @@ async def main():
             manager_perms_result = await vault.get_permissions(
                 document_id=document.id, agent_id=manager_id
             )
-            manager_perms = manager_perms_result.get("permissions", [])
+            # v2.2: Type-safe access
             for perm_level in ["READ", "WRITE", "DELETE", "SHARE"]:
-                has_perm = any(p["permission"] == perm_level for p in manager_perms)
+                has_perm = any(
+                    acl.permission == perm_level
+                    for acl in manager_perms_result.permissions
+                )
                 print(f"  {perm_level}: {'[OK]' if has_perm else '[NO]'}")
 
             # Check employee permissions
@@ -180,9 +199,12 @@ async def main():
             employee_perms_result = await vault.get_permissions(
                 document_id=document.id, agent_id=employee_id
             )
-            employee_perms = employee_perms_result.get("permissions", [])
+            # v2.2: Type-safe access
             for perm_level in ["READ", "WRITE", "DELETE", "SHARE"]:
-                has_perm = any(p["permission"] == perm_level for p in employee_perms)
+                has_perm = any(
+                    acl.permission == perm_level
+                    for acl in employee_perms_result.permissions
+                )
                 print(f"  {perm_level}: {'[OK]' if has_perm else '[NO]'}")
 
             # Demonstrate what each agent can do
@@ -234,8 +256,8 @@ async def main():
                 result = await vault.list_docs(
                     agent_id=agent_id, organization_id=org_id
                 )
-                docs = result.get("documents", [])
-                print(f"{agent_name} can access {len(docs)} document(s)")
+                # v2.2: Type-safe access
+                print(f"{agent_name} can access {result.pagination.total} document(s)")
 
             # Demonstrate revoking permissions by updating permissions
             print("\n--- Revoking Permissions ---")
@@ -248,10 +270,11 @@ async def main():
             employee_perms_result = await vault.get_permissions(
                 document_id=document.id, agent_id=employee_id
             )
-            employee_perms = employee_perms_result.get("permissions", [])
 
-            # Employee should have READ permission now
-            has_read = any(p["permission"] == "READ" for p in employee_perms)
+            # v2.2: Type-safe access
+            has_read = any(
+                acl.permission == "READ" for acl in employee_perms_result.permissions
+            )
             print(f"Employee has READ before revoke: {'[OK]' if has_read else '[NO]'}")
 
             # In v2.0, to revoke, we'd typically delete the permission record
@@ -267,14 +290,14 @@ async def main():
             all_permissions_result = await vault.get_permissions(
                 document_id=document.id, agent_id=admin_id
             )
-            all_permissions = all_permissions_result.get("permissions", [])
-            print(f"Document has permissions for:")
+            # v2.2: Type-safe access
+            print(f"Document has {all_permissions_result.total} permission(s):")
             permission_map = {}
-            for perm in all_permissions:
-                agent_id_str = perm["agent_id"]
+            for acl in all_permissions_result.permissions:
+                agent_id_str = str(acl.agent_id)
                 if agent_id_str not in permission_map:
                     permission_map[agent_id_str] = []
-                permission_map[agent_id_str].append(perm["permission"])
+                permission_map[agent_id_str].append(acl.permission)
 
             for agent_id, perms in permission_map.items():
                 print(f"  - Agent {agent_id}: {', '.join(perms)}")
@@ -282,10 +305,10 @@ async def main():
             print("\nAccess control demonstration completed!")
             print("\nKey concepts demonstrated:")
             print("  - Permission levels (READ, WRITE, DELETE, SHARE)")
-            print("  - Bulk permission management with set_permissions()")
-            print("  - Permission querying with get_permissions()")
+            print("  - Bulk permission management with PermissionGrant models ⭐")
+            print("  - Type-safe permission querying with PermissionListResponse ⭐")
             print("  - Permission validation and enforcement")
-            print("  - Listing accessible documents with list_docs()")
+            print("  - Type-safe document listing with DocumentListResponse ⭐")
             print("  - Role-based access control patterns")
 
     finally:
