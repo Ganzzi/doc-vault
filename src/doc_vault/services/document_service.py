@@ -20,6 +20,12 @@ from doc_vault.database.repositories.document import DocumentRepository
 from doc_vault.database.repositories.organization import OrganizationRepository
 from doc_vault.database.repositories.version import VersionRepository
 from doc_vault.database.schemas.document import Document, DocumentCreate
+from doc_vault.database.schemas.responses import (
+    DocumentDetails,
+    DocumentListResponse,
+    PaginationMeta,
+    SearchResponse,
+)
 from doc_vault.database.schemas.version import DocumentVersion, DocumentVersionCreate
 from doc_vault.exceptions import (
     AgentNotFoundError,
@@ -89,8 +95,12 @@ class DocumentService:
         """
         Extract file content, filename, and size from various input types.
 
+        For str input, implements smart detection (v2.2):
+        - If path exists on disk → treat as file path, read file
+        - If path doesn't exist → treat as text content
+
         Args:
-            file_input: File path (str), bytes, or binary stream
+            file_input: File path (str), text content (str), bytes, or binary stream
 
         Returns:
             Tuple of (file_content, filename, file_size)
@@ -99,18 +109,24 @@ class DocumentService:
             ValidationError: If input is invalid or unreadable
         """
         if isinstance(file_input, str):
-            # File path
-            if not os.path.exists(file_input):
-                raise ValidationError(f"File does not exist: {file_input}")
-            try:
-                file_path = Path(file_input)
-                file_size = file_path.stat().st_size
-                filename = file_path.name
-                with open(file_input, "rb") as f:
-                    file_content = f.read()
-                return file_content, filename, file_size
-            except Exception as e:
-                raise ValidationError(f"Failed to read file {file_input}: {e}")
+            # Smart string detection (v2.2): file path OR text content
+            file_path = Path(file_input)
+
+            if file_path.exists() and file_path.is_file():
+                # It's a file path - read the file
+                try:
+                    file_size = file_path.stat().st_size
+                    filename = file_path.name
+                    with open(file_input, "rb") as f:
+                        file_content = f.read()
+                    return file_content, filename, file_size
+                except Exception as e:
+                    raise ValidationError(f"Failed to read file {file_input}: {e}")
+            else:
+                # Treat as text content (v2.2 feature)
+                file_content = file_input.encode("utf-8")
+                filename = "document.txt"  # Default filename for text content
+                return file_content, filename, len(file_content)
 
         elif isinstance(file_input, bytes):
             # Bytes data
@@ -132,7 +148,7 @@ class DocumentService:
         else:
             raise ValidationError(
                 f"Unsupported file input type: {type(file_input)}. "
-                f"Must be str (path), bytes, or BinaryIO"
+                f"Must be str (path or text), bytes, or BinaryIO"
             )
 
     def _detect_mime_type(self, filename: str, content: Optional[bytes] = None) -> str:
@@ -1440,7 +1456,7 @@ class DocumentService:
         agent_id: UUID | str,
         include_versions: bool = True,
         include_permissions: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> DocumentDetails:
         """
         Get comprehensive document details including version history and permissions (v2.0).
 
@@ -1454,7 +1470,7 @@ class DocumentService:
             include_permissions: If True, include all permissions for document (requires ADMIN)
 
         Returns:
-            Dictionary with document details, versions, and optionally permissions
+            DocumentDetails with document, versions, and optionally permissions
 
         Raises:
             DocumentNotFoundError: If document doesn't exist
@@ -1474,47 +1490,17 @@ class DocumentService:
         # Check read permission
         await self._check_permission(document_id, agent_id, "READ")
 
-        # Build response
-        details = {
-            "id": str(document.id),
-            "name": document.name,
-            "description": document.description,
-            "filename": document.filename,
-            "file_size": document.file_size,
-            "mime_type": document.mime_type,
-            "status": document.status,
-            "organization_id": str(document.organization_id),
-            "created_by": str(document.created_by),
-            "created_at": document.created_at.isoformat(),
-            "updated_by": str(document.updated_by),
-            "updated_at": document.updated_at.isoformat(),
-            "current_version": document.current_version,
-            "tags": document.tags,
-            "metadata": document.metadata,
-            "prefix": document.prefix,
-            "path": document.path,
-        }
+        # Get version count
+        versions_list = await self.version_repo.get_by_document(document_id)
+        version_count = len(versions_list)
 
         # Include version history if requested
+        versions = None
         if include_versions:
-            versions = await self.version_repo.get_by_document(document_id)
-            details["versions"] = [
-                {
-                    "version_number": v.version_number,
-                    "filename": v.filename,
-                    "file_size": v.file_size,
-                    "mime_type": v.mime_type,
-                    "storage_path": v.storage_path,
-                    "change_description": v.change_description,
-                    "change_type": v.change_type,
-                    "created_by": str(v.created_by),
-                    "created_at": v.created_at.isoformat(),
-                    "metadata": v.metadata,
-                }
-                for v in versions
-            ]
+            versions = versions_list
 
         # Include permissions if requested (ADMIN only)
+        permissions = None
         if include_permissions:
             # Security check: Only document owners (ADMIN permission) can view permissions
             agent_acls = await self.acl_repo.get_by_document_and_agent(
@@ -1528,22 +1514,17 @@ class DocumentService:
                 )
 
             # Agent is owner - include all permissions
-            acls = await self.acl_repo.get_by_document(document_id)
-            details["permissions"] = [
-                {
-                    "agent_id": str(acl.agent_id),
-                    "permission": acl.permission,
-                    "granted_by": str(acl.granted_by),
-                    "granted_at": acl.granted_at.isoformat(),
-                    "expires_at": (
-                        acl.expires_at.isoformat() if acl.expires_at else None
-                    ),
-                }
-                for acl in acls
-            ]
+            permissions = await self.acl_repo.get_by_document(document_id)
 
         logger.info(f"Retrieved document details: {document_id} for agent {agent_id}")
-        return details
+
+        return DocumentDetails(
+            document=document,
+            versions=versions,
+            permissions=permissions,
+            version_count=version_count,
+            current_version=document.current_version,
+        )
 
     async def list_documents_paginated(
         self,
@@ -1558,7 +1539,7 @@ class DocumentService:
         offset: int = 0,
         sort_by: str = "created_at",
         sort_order: str = "desc",
-    ) -> Dict[str, Any]:
+    ) -> DocumentListResponse:
         """
         List documents with hierarchical filtering, pagination, and sorting (v2.0).
 
@@ -1579,7 +1560,7 @@ class DocumentService:
             sort_order: Sort direction (asc, desc)
 
         Returns:
-            Dictionary with documents list and pagination metadata
+            DocumentListResponse with documents list and pagination metadata
 
         Raises:
             AgentNotFoundError: If agent doesn't exist
@@ -1646,45 +1627,33 @@ class DocumentService:
             except PermissionDeniedError:
                 continue
 
-        # Convert to dictionaries
-        docs_list = [
-            {
-                "id": str(d.id),
-                "name": d.name,
-                "description": d.description,
-                "filename": d.filename,
-                "file_size": d.file_size,
-                "mime_type": d.mime_type,
-                "status": d.status,
-                "created_at": d.created_at.isoformat(),
-                "updated_at": d.updated_at.isoformat(),
-                "tags": d.tags,
-                "prefix": d.prefix,
-                "path": d.path,
-                "current_version": d.current_version,
-            }
-            for d in accessible_docs
-        ]
+        # Calculate total count (simplified - same as returned count for now)
+        total_count = len(accessible_docs)
 
-        # Return with pagination metadata
-        return {
-            "documents": docs_list,
-            "pagination": {
-                "limit": limit,
-                "offset": offset,
-                "count": len(docs_list),
-                "total_available": len(accessible_docs),
-            },
-            "filters": {
-                "prefix": prefix,
-                "recursive": recursive,
-                "max_depth": max_depth,
-                "status": status,
-                "tags": tags,
-                "sort_by": sort_by,
-                "sort_order": sort_order,
-            },
+        # Create pagination metadata
+        pagination = PaginationMeta(
+            total=total_count,
+            limit=limit,
+            offset=offset,
+            has_more=(offset + limit) < total_count,
+        )
+
+        # Create filters dict
+        filters = {
+            "prefix": prefix,
+            "recursive": recursive,
+            "max_depth": max_depth,
+            "status": status,
+            "tags": tags,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
         }
+
+        return DocumentListResponse(
+            documents=accessible_docs,
+            pagination=pagination,
+            filters=filters,
+        )
 
     async def search_documents_enhanced(
         self,
@@ -1696,7 +1665,7 @@ class DocumentService:
         tags: Optional[List[str]] = None,
         limit: int = 20,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> SearchResponse:
         """
         Enhanced document search with filters (v2.0).
 
@@ -1714,7 +1683,7 @@ class DocumentService:
             offset: Number of results to skip
 
         Returns:
-            Dictionary with search results and metadata
+            SearchResponse with search results and metadata
 
         Raises:
             AgentNotFoundError: If agent doesn't exist
@@ -1767,37 +1736,31 @@ class DocumentService:
         # Apply offset to results
         final_results = filtered_docs[offset : offset + limit]
 
-        # Convert to dictionaries
-        results_list = [
-            {
-                "id": str(d.id),
-                "name": d.name,
-                "description": d.description,
-                "filename": d.filename,
-                "file_size": d.file_size,
-                "status": d.status,
-                "created_at": d.created_at.isoformat(),
-                "prefix": d.prefix,
-                "relevance_score": 1.0,  # TODO: implement actual relevance scoring
-            }
-            for d in final_results
-        ]
+        # Calculate total count
+        total_count = len(filtered_docs)
+
+        # Create pagination metadata
+        pagination = PaginationMeta(
+            total=total_count,
+            limit=limit,
+            offset=offset,
+            has_more=(offset + len(final_results)) < total_count,
+        )
+
+        # Create filters dict
+        filters = {
+            "prefix": prefix,
+            "status": status,
+            "tags": tags,
+        }
 
         logger.info(
-            f"Enhanced search: {query} in org {organization_id} - {len(results_list)} results"
+            f"Enhanced search: {query} in org {organization_id} - {len(final_results)} results"
         )
-        return {
-            "query": query,
-            "results": results_list,
-            "pagination": {
-                "limit": limit,
-                "offset": offset,
-                "count": len(results_list),
-                "total_matching": len(filtered_docs),
-            },
-            "filters": {
-                "prefix": prefix,
-                "status": status,
-                "tags": tags,
-            },
-        }
+
+        return SearchResponse(
+            documents=final_results,
+            query=query,
+            pagination=pagination,
+            filters=filters,
+        )

@@ -16,6 +16,7 @@ from doc_vault.database.repositories.document import DocumentRepository
 from doc_vault.database.repositories.organization import OrganizationRepository
 from doc_vault.database.schemas.acl import DocumentACL, DocumentACLCreate
 from doc_vault.database.schemas.document import Document
+from doc_vault.database.schemas.responses import PermissionListResponse
 from doc_vault.exceptions import (
     AgentNotFoundError,
     DocumentNotFoundError,
@@ -629,7 +630,7 @@ class AccessService:
 
     async def get_permissions_detailed(
         self, document_id: str | UUID, agent_id: Optional[str | UUID] = None
-    ) -> dict:
+    ) -> PermissionListResponse:
         """
         Get detailed permission information for a document (v2.0).
 
@@ -640,7 +641,7 @@ class AccessService:
             agent_id: Optional agent UUID to filter permissions for specific agent
 
         Returns:
-            Dictionary with document and its permissions
+            PermissionListResponse with document permissions
 
         Raises:
             DocumentNotFoundError: If document doesn't exist
@@ -662,33 +663,13 @@ class AccessService:
         if agent_id:
             acls = [acl for acl in acls if acl.agent_id == agent_id]
 
-        # Build detailed response
-        permissions_list = []
-        for acl in acls:
-            permissions_list.append(
-                {
-                    "agent_id": str(acl.agent_id),
-                    "permission": acl.permission,
-                    "granted_by": str(acl.granted_by),
-                    "granted_at": acl.granted_at.isoformat(),
-                    "expires_at": (
-                        acl.expires_at.isoformat() if acl.expires_at else None
-                    ),
-                    "is_expired": (
-                        acl.expires_at and acl.expires_at < datetime.now()
-                        if acl.expires_at
-                        else False
-                    ),
-                }
-            )
-
-        return {
-            "document_id": str(document_id),
-            "document_name": doc.name,
-            "total_permissions": len(permissions_list),
-            "permissions": permissions_list,
-            "agent_filter": str(agent_id) if agent_id else None,
-        }
+        return PermissionListResponse(
+            document_id=document_id,
+            permissions=acls,
+            total=len(acls),
+            requested_by=agent_id,
+            requested_at=datetime.utcnow(),
+        )
 
     async def check_permissions_multi(
         self,
