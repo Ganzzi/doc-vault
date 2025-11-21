@@ -1,21 +1,36 @@
 """
-Basic usage example for DocVault SDK v2.0.
+Basic usage example for DocVault SDK v2.2.
 
 This example demonstrates the core functionality of the DocVault SDK:
 - Organization and agent registration (with UUID org_id/agent_id)
-- Document upload and download
-- Access control (unified set_permissions/get_permissions API)
-- Document versioning (get_document_details with include_versions)
+- Document upload and download (including text content upload)
+- Access control (unified set_permissions/get_permissions API with type-safe models)
+- Document versioning (get_document_details with type-safe responses)
+- Type-safe response models for all operations
 
-Note: In v2.0, org_id and agent_id for organizations and agents must be valid UUIDs.
+Key v2.2 features:
+- Type-safe response models (DocumentListResponse, SearchResponse, etc.)
+- Smart text content upload (no temp files needed)
+- Model-only permission API (PermissionGrant required)
+
+Note: In v2.0+, org_id and agent_id for organizations and agents must be valid UUIDs.
 """
 
 import asyncio
 import tempfile
 from pathlib import Path
 import uuid
+from typing import TYPE_CHECKING
 
 from doc_vault import DocVaultSDK
+
+if TYPE_CHECKING:
+    from doc_vault.database.schemas import (
+        DocumentListResponse,
+        SearchResponse,
+        DocumentDetails,
+        PermissionListResponse,
+    )
 
 
 async def main():
@@ -99,7 +114,7 @@ async def main():
             )
             print(f"Document metadata updated: {updated_doc.name}")
 
-            # 5. List documents (v2.0 method)
+            # 5. List documents (v2.2 type-safe response)
             print("\nListing documents...")
 
             result = await vault.list_docs(
@@ -107,14 +122,12 @@ async def main():
                 agent_id=agent1_id,
                 limit=10,
             )
-            documents = result.get("documents", [])
-            print(f"Found {len(documents)} document(s)")
-            for doc in documents:
-                print(
-                    f"   - {doc.get('name')} (ID: {doc.get('id')}, Status: {doc.get('status')})"
-                )
+            # v2.2: Type-safe access via model attributes
+            print(f"Found {result.pagination.total} document(s)")
+            for doc in result.documents:
+                print(f"   - {doc.name} (ID: {doc.id}, Status: {doc.status})")
 
-            # 6. Search documents
+            # 6. Search documents (v2.2 type-safe response)
             print("\nSearching documents...")
 
             search_results = await vault.search(
@@ -122,12 +135,12 @@ async def main():
                 organization_id=org_id,
                 agent_id=agent1_id,
             )
-            results = search_results.get("results", [])
-            print(f"Search found {len(results)} document(s)")
-            for doc in results:
-                print(f"   - {doc.get('name')} (ID: {doc.get('id')})")
+            # v2.2: Type-safe access
+            print(f"Search found {search_results.pagination.total} document(s)")
+            for doc in search_results.documents:
+                print(f"   - {doc.name} (ID: {doc.id})")
 
-            # 7. Demonstrate access control (v2.0 API)
+            # 7. Demonstrate access control (v2.2 type-safe API)
             print("\nDemonstrating access control...")
 
             # Register another agent
@@ -146,10 +159,10 @@ async def main():
             perms_result = await vault.get_permissions(
                 document_id=document.id, agent_id=agent2_id
             )
-            perms_list = perms_result.get("permissions", [])
-            print(f"   Agent 2 has {len(perms_list)} permissions")
+            # v2.2: Type-safe access
+            print(f"   Agent 2 has {perms_result.total} permissions")
 
-            # Grant READ permission to the second agent (v2.0 API)
+            # Grant READ permission to the second agent (v2.2: model-only)
             from doc_vault.database.schemas.permission import PermissionGrant
 
             await vault.set_permissions(
@@ -168,17 +181,17 @@ async def main():
             perms_result = await vault.get_permissions(
                 document_id=document.id, agent_id=agent2_id
             )
-            perms_list = perms_result.get("permissions", [])
-            print(f"Agent 2 now has {len(perms_list)} permission(s):")
-            for p in perms_list:
-                print(f"   - {p['permission']}")
+            # v2.2: Type-safe access
+            print(f"Agent 2 now has {perms_result.total} permission(s):")
+            for acl in perms_result.permissions:
+                print(f"   - {acl.permission}")
 
             # Second agent can now see the document in list_docs
             result = await vault.list_docs(agent_id=agent2_id, organization_id=org_id)
-            accessible_docs = result.get("documents", [])
-            print(f"Agent 2 can access {len(accessible_docs)} document(s)")
+            # v2.2: Type-safe access
+            print(f"Agent 2 can access {result.pagination.total} document(s)")
 
-            # 8. Demonstrate versioning (v2.0 API)
+            # 8. Demonstrate versioning (v2.2 type-safe API)
             print("\nDemonstrating document versioning...")
 
             # Create a new version of the file
@@ -202,16 +215,17 @@ async def main():
                 )
                 print(f"New version created: Version {new_doc.current_version}")
 
-                # Get document details with version history (v2.0 API)
+                # Get document details with version history (v2.2 type-safe response)
                 details = await vault.get_document_details(
                     document_id=document.id, agent_id=agent1_id, include_versions=True
                 )
-                versions = details.get("versions", [])
-                print(f"Document has {len(versions)} version(s)")
-                for v in versions:
-                    print(
-                        f"   - Version {v.get('version_number')}: {v.get('change_description') or 'Initial upload'}"
-                    )
+                # v2.2: Type-safe access
+                print(f"Document has {details.version_count} version(s)")
+                if details.versions:
+                    for v in details.versions:
+                        print(
+                            f"   - Version {v.version_number}: {v.change_description or 'Initial upload'}"
+                        )
 
                 # Download a specific version
                 old_content = await vault.download(
@@ -225,14 +239,36 @@ async def main():
             finally:
                 Path(updated_file_path).unlink(missing_ok=True)
 
-            print("\nDocVault SDK v2.0 demonstration completed successfully!")
+            # 9. Demonstrate text content upload (v2.2 new feature)
+            print("\nDemonstrating direct text upload (no temp file needed)...")
+
+            text_doc = await vault.upload(
+                file_input="This is direct text content uploaded without a temp file!",
+                name="Quick Note",
+                organization_id=org_id,
+                agent_id=agent1_id,
+                description="Direct text upload example",
+                tags=["text", "quick", "v2.2"],
+            )
+            print(f"Text document uploaded: {text_doc.name} (ID: {text_doc.id})")
+            print(f"   File size: {text_doc.file_size} bytes")
+
+            # Download and verify
+            text_content = await vault.download(
+                document_id=text_doc.id, agent_id=agent1_id
+            )
+            print(f"   Content: {text_content.decode()}")
+
+            print("\nDocVault SDK v2.2 demonstration completed successfully!")
             print("\nKey features demonstrated:")
             print("  - Organization and agent management with UUIDs")
             print("  - Document upload/download with multiple input types")
+            print("  - Direct text content upload (no temp files) ⭐ NEW")
+            print("  - Type-safe response models ⭐ NEW")
             print("  - Metadata management")
-            print("  - Access control with set_permissions/get_permissions")
-            print("  - Document versioning with get_document_details")
-            print("  - Search functionality")
+            print("  - Access control with type-safe PermissionGrant models")
+            print("  - Document versioning with type-safe DocumentDetails")
+            print("  - Search functionality with type-safe SearchResponse")
 
     finally:
         # Clean up temporary file

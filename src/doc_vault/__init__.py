@@ -42,7 +42,7 @@ from .exceptions import (
     VersionNotFoundError,
 )
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 __all__ = [
     # Main classes
     "DocVaultSDK",

@@ -171,15 +171,26 @@ uv run pre-commit run --all-files
 
 ### Testing
 
+DocVault uses a **pyramid testing strategy** with focused test files. See [docs/TEST_STRATEGY.md](./docs/TEST_STRATEGY.md) for complete test organization.
+
 ```bash
-# Run tests
+# Quick smoke test (SDK basics)
+uv run pytest tests/test_core.py -v
+
+# Integration tests (v2.0 API)
+uv run pytest tests/test_core_v2.py -v
+
+# Type safety tests (v2.2 response models)
+uv run pytest tests/test_core_v2_2.py -v
+
+# Run all tests
 uv run pytest
 
 # Run with verbose output
 uv run pytest -v
 
 # Run specific test file
-uv run pytest tests/test_config.py
+uv run pytest tests/test_core_v2_2.py -v
 
 # Run tests with coverage
 uv run pytest --cov=src/doc_vault --cov-report=term-missing
