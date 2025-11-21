@@ -13,6 +13,7 @@ from .config import Config
 from .database.postgres_manager import PostgreSQLManager
 from .database.repositories.agent import AgentRepository
 from .database.repositories.organization import OrganizationRepository
+from .database.schemas.acl import DocumentACL
 from .database.schemas.permission import PermissionGrant
 
 # Response models (v2.2)
@@ -115,40 +116,6 @@ class DocVaultSDK:
         self._agent_service = None
         self._initialized = False
         logger.info("DocVault SDK cleaned up successfully")
-
-    async def _resolve_external_ids(
-        self, organization_id: Optional[str] = None, agent_id: Optional[str] = None
-    ) -> tuple[Optional[UUID], Optional[UUID]]:
-        """
-        Resolve external IDs to UUIDs.
-
-        In v2.0, external_id IS the UUID, so this just ensures proper UUID format.
-        """
-        org_uuid = None
-        agent_uuid = None
-
-        if organization_id:
-            # In v2.0, organization_id IS the UUID
-            if isinstance(organization_id, str):
-                org_uuid = UUID(organization_id)
-            else:
-                org_uuid = organization_id
-
-        if agent_id:
-            # In v2.0, agent_id IS the UUID
-            if isinstance(agent_id, str):
-                agent_uuid = UUID(agent_id)
-            else:
-                agent_uuid = agent_id
-
-        return org_uuid, agent_uuid
-
-        self._storage_backend = None
-        self._document_service = None
-        self._access_service = None
-        self._version_service = None
-        self._initialized = False
-        logger.info("DocVault SDK shut down successfully")
 
     def __str__(self) -> str:
         """String representation."""
@@ -296,7 +263,7 @@ class DocVaultSDK:
     async def download(
         self,
         document_id: UUID,
-        agent_id: str,
+        agent_id: str | UUID,
         version: Optional[int] = None,
     ) -> bytes:
         """
@@ -304,7 +271,7 @@ class DocVaultSDK:
 
         Args:
             document_id: Document UUID
-            agent_id: Agent external ID (requester)
+            agent_id: Agent UUID or string (requester)
             version: Optional version number (None = current)
 
         Returns:
@@ -317,24 +284,26 @@ class DocVaultSDK:
             PermissionDeniedError: If agent lacks READ permission
             StorageError: If file retrieval from storage fails
             RuntimeError: If SDK is not initialized
+
+        Note:
+            agent_id accepts both UUID objects and string representations.
+            The service layer handles automatic UUID conversion.
         """
         if not self._document_service:
             raise RuntimeError(
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
-        # Resolve external IDs to UUIDs
-        _, agent_uuid = await self._resolve_external_ids(agent_id=agent_id)
 
         return await self._document_service.download_document(
             document_id=document_id,
-            agent_id=agent_uuid,
+            agent_id=agent_id,
             version=version,
         )
 
     async def update_metadata(
         self,
         document_id: UUID,
-        agent_id: str,
+        agent_id: str | UUID,
         name: Optional[str] = None,
         description: Optional[str] = None,
         tags: Optional[List[str]] = None,
@@ -345,7 +314,7 @@ class DocVaultSDK:
 
         Args:
             document_id: Document UUID
-            agent_id: Agent external ID (updater)
+            agent_id: Agent UUID or string (updater)
             name: Optional new name
             description: Optional new description
             tags: Optional new tags
@@ -360,17 +329,19 @@ class DocVaultSDK:
             AgentNotFoundError: If agent doesn't exist
             PermissionDeniedError: If agent lacks WRITE permission
             RuntimeError: If SDK is not initialized
+
+        Note:
+            agent_id accepts both UUID objects and string representations.
+            The service layer handles automatic UUID conversion.
         """
         if not self._document_service:
             raise RuntimeError(
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
-        # Resolve external IDs to UUIDs
-        _, agent_uuid = await self._resolve_external_ids(agent_id=agent_id)
 
         return await self._document_service.update_metadata(
             document_id=document_id,
-            agent_id=agent_uuid,
+            agent_id=agent_id,
             name=name,
             description=description,
             tags=tags,
@@ -380,7 +351,7 @@ class DocVaultSDK:
     async def delete(
         self,
         document_id: UUID,
-        agent_id: str,
+        agent_id: str | UUID,
         hard_delete: bool = False,
     ) -> None:
         """
@@ -388,7 +359,7 @@ class DocVaultSDK:
 
         Args:
             document_id: Document UUID
-            agent_id: Agent external ID (deleter)
+            agent_id: Agent UUID or string (deleter)
             hard_delete: If True, permanently delete; if False, soft delete
 
         Raises:
@@ -398,17 +369,19 @@ class DocVaultSDK:
             PermissionDeniedError: If agent lacks DELETE permission
             StorageError: If file removal from storage fails (hard_delete=True)
             RuntimeError: If SDK is not initialized
+
+        Note:
+            agent_id accepts both UUID objects and string representations.
+            The service layer handles automatic UUID conversion.
         """
         if not self._document_service:
             raise RuntimeError(
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
-        # Resolve external IDs to UUIDs
-        _, agent_uuid = await self._resolve_external_ids(agent_id=agent_id)
 
         await self._document_service.delete_document(
             document_id=document_id,
-            agent_id=agent_uuid,
+            agent_id=agent_id,
             hard_delete=hard_delete,
         )
 
@@ -425,7 +398,7 @@ class DocVaultSDK:
         offset: int = 0,
         sort_by: str = "created_at",
         sort_order: str = "desc",
-    ) -> Dict[str, Any]:
+    ) -> DocumentListResponse:
         """
         List documents with hierarchical organization support.
 
@@ -443,13 +416,45 @@ class DocVaultSDK:
             sort_order: Sort direction ('asc' or 'desc')
 
         Returns:
-            Dictionary with documents list and pagination metadata
+            DocumentListResponse: Response model containing:
+                - documents: List of Document instances
+                - pagination: Pagination metadata (total, limit, offset, has_more)
+                - filters: Applied filters
 
         Raises:
             ValidationError: If organization_id or agent_id is invalid UUID format
             OrganizationNotFoundError: If organization doesn't exist
             AgentNotFoundError: If agent doesn't exist
             RuntimeError: If SDK is not initialized
+
+        Example:
+            ```python
+            # List all documents
+            response = await vault.list_docs(
+                organization_id=org_id,
+                agent_id=agent_id,
+                limit=50,
+                offset=0
+            )
+
+            # Access response fields
+            for doc in response.documents:
+                print(f"{doc.name}: {doc.file_size} bytes")
+
+            # Check pagination
+            print(f"Total: {response.pagination.total}")
+            print(f"Has more: {response.pagination.has_more}")
+
+            # List documents with filters
+            response = await vault.list_docs(
+                organization_id=org_id,
+                agent_id=agent_id,
+                prefix="/reports/2025/",
+                recursive=True,
+                status="active",
+                tags=["important"]
+            )
+            ```
         """
         if not self._document_service:
             raise RuntimeError(
@@ -480,7 +485,7 @@ class DocVaultSDK:
         tags: Optional[List[str]] = None,
         limit: int = 20,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> SearchResponse:
         """
         Search documents with optional filters.
 
@@ -495,13 +500,43 @@ class DocVaultSDK:
             offset: Result offset for pagination
 
         Returns:
-            Dictionary with search results and metadata
+            SearchResponse: Response model containing:
+                - documents: List of matching Document instances
+                - query: The search query used
+                - pagination: Pagination metadata (total, limit, offset, has_more)
+                - filters: Applied filters
 
         Raises:
             ValidationError: If organization_id or agent_id is invalid UUID format
             OrganizationNotFoundError: If organization doesn't exist
             AgentNotFoundError: If agent doesn't exist
             RuntimeError: If SDK is not initialized
+
+        Example:
+            ```python
+            # Search documents
+            response = await vault.search(
+                query="quarterly report",
+                organization_id=org_id,
+                agent_id=agent_id,
+                status="active",
+                limit=20
+            )
+
+            # Access results
+            print(f"Found {response.pagination.total} documents matching '{response.query}'")
+            for doc in response.documents:
+                print(f"- {doc.name}")
+
+            # Search with prefix filter
+            response = await vault.search(
+                query="budget",
+                organization_id=org_id,
+                agent_id=agent_id,
+                prefix="/finance/",
+                tags=["2025"]
+            )
+            ```
         """
         if not self._document_service:
             raise RuntimeError(
@@ -529,7 +564,7 @@ class DocVaultSDK:
         agent_id: str | UUID,
         include_versions: bool = True,
         include_permissions: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> DocumentDetails:
         """
         Get comprehensive document details with version and permission info.
 
@@ -540,12 +575,43 @@ class DocVaultSDK:
             include_permissions: Include permission details - requires ADMIN permission (default: False)
 
         Returns:
-            Dictionary with document details, versions, and optionally permissions
+            DocumentDetails: Response model containing:
+                - document: Document metadata
+                - versions: List of DocumentVersion instances (if include_versions=True)
+                - permissions: List of DocumentACL instances (if include_permissions=True and agent has ADMIN)
+                - version_count: Total number of versions
+                - current_version: Current version number
 
         Raises:
             DocumentNotFoundError: If document doesn't exist
             PermissionDeniedError: If agent lacks READ permission, or if include_permissions=True and agent lacks ADMIN permission
             AgentNotFoundError: If agent doesn't exist
+            RuntimeError: If SDK is not initialized
+
+        Example:
+            ```python
+            # Get basic document details with versions
+            details = await vault.get_document_details(
+                document_id=doc_id,
+                agent_id=agent_id,
+                include_versions=True
+            )
+            print(f"Document: {details.document.name}")
+            print(f"Total versions: {details.version_count}")
+            for version in details.versions:
+                print(f"  v{version.version_number}: {version.change_description}")
+
+            # Get full details including permissions (requires ADMIN)
+            details = await vault.get_document_details(
+                document_id=doc_id,
+                agent_id=admin_id,
+                include_versions=True,
+                include_permissions=True
+            )
+            if details.permissions:
+                for acl in details.permissions:
+                    print(f"  {acl.agent_id}: {acl.permission}")
+            ```
         """
         if not self._document_service:
             raise RuntimeError(
@@ -564,7 +630,7 @@ class DocVaultSDK:
         document_id: str | UUID,
         new_owner_id: str | UUID,
         transferred_by: str | UUID,
-    ):
+    ) -> OwnershipTransferResponse:
         """
         Transfer document ownership to another agent.
 
@@ -574,7 +640,13 @@ class DocVaultSDK:
             transferred_by: Transferring agent UUID or string (must be current owner)
 
         Returns:
-            Updated Document instance
+            OwnershipTransferResponse: Response model containing:
+                - document: Updated Document instance
+                - old_owner: Previous owner UUID
+                - new_owner: New owner UUID
+                - transferred_by: Agent who performed transfer
+                - transferred_at: Transfer timestamp
+                - new_permissions: Updated permission list
 
         Raises:
             ValidationError: If any UUID parameter is invalid format
@@ -582,6 +654,19 @@ class DocVaultSDK:
             AgentNotFoundError: If new_owner_id or transferred_by agent doesn't exist
             PermissionDeniedError: If transferred_by agent is not the current owner (lacks ADMIN permission)
             RuntimeError: If SDK is not initialized
+
+        Example:
+            ```python
+            # Transfer ownership
+            response = await vault.transfer_ownership(
+                document_id=doc_id,
+                new_owner_id=new_agent_id,
+                transferred_by=current_owner_id
+            )
+            print(f"Ownership transferred from {response.old_owner} to {response.new_owner}")
+            print(f"Document: {response.document.name}")
+            print(f"New permissions: {len(response.new_permissions)}")
+            ```
         """
         if not self._access_service:
             raise RuntimeError(
@@ -600,7 +685,7 @@ class DocVaultSDK:
         self,
         document_id: str | UUID,
         agent_id: Optional[str | UUID] = None,
-    ) -> Dict[str, Any]:
+    ) -> PermissionListResponse:
         """
         Get permissions for a document.
 
@@ -611,11 +696,36 @@ class DocVaultSDK:
             agent_id: Optional agent UUID/string to filter permissions
 
         Returns:
-            Dictionary with permission details
+            PermissionListResponse: Response model containing:
+                - document_id: The document UUID
+                - permissions: List of DocumentACL instances
+                - total: Total permission count
+                - requested_by: Agent who requested permissions
+                - requested_at: Timestamp of request
 
         Raises:
             DocumentNotFoundError: If document doesn't exist
             AgentNotFoundError: If agent_id provided but agent doesn't exist
+            RuntimeError: If SDK is not initialized
+
+        Example:
+            ```python
+            # Get all permissions for a document
+            response = await vault.get_permissions(
+                document_id=doc_id
+            )
+            print(f"Document has {response.total} permissions")
+            for acl in response.permissions:
+                print(f"  {acl.agent_id}: {acl.permission}")
+
+            # Get permissions for specific agent
+            response = await vault.get_permissions(
+                document_id=doc_id,
+                agent_id=agent_id
+            )
+            if response.permissions:
+                print(f"Agent has: {response.permissions[0].permission}")
+            ```
         """
         if not self._access_service:
             raise RuntimeError(
@@ -630,9 +740,9 @@ class DocVaultSDK:
     async def set_permissions(
         self,
         document_id: str | UUID,
-        permissions: List[PermissionGrant] | List[dict],
+        permissions: List[PermissionGrant],
         granted_by: str | UUID,
-    ) -> List[Any]:
+    ) -> List[DocumentACL]:
         """
         Set permissions for a document in bulk.
 
@@ -640,7 +750,7 @@ class DocVaultSDK:
 
         Args:
             document_id: Document UUID or string
-            permissions: List of PermissionGrant objects or dicts with keys:
+            permissions: List of PermissionGrant model instances with fields:
                 - agent_id: UUID or string
                 - permission: Permission level (READ, WRITE, DELETE, SHARE, ADMIN)
                 - expires_at: Optional expiration datetime
@@ -648,20 +758,21 @@ class DocVaultSDK:
             granted_by: UUID or string of agent granting permissions
 
         Returns:
-            List of created ACL instances
+            List[DocumentACL]: List of created ACL instances
 
         Raises:
             ValidationError: If permission data is invalid
             DocumentNotFoundError: If document doesn't exist
             AgentNotFoundError: If granting agent or target agent doesn't exist
             PermissionDeniedError: If granting agent lacks ADMIN permission
+            RuntimeError: If SDK is not initialized
 
         Example:
             ```python
             from doc_vault.database.schemas import PermissionGrant
 
-            # Using PermissionGrant model (recommended)
-            await vault.set_permissions(
+            # Set permissions using PermissionGrant models
+            acls = await vault.set_permissions(
                 document_id=doc_id,
                 permissions=[
                     PermissionGrant(agent_id=agent1, permission="READ"),
@@ -674,14 +785,9 @@ class DocVaultSDK:
                 granted_by=admin_id
             )
 
-            # Using dicts (legacy, still supported)
-            await vault.set_permissions(
-                document_id=doc_id,
-                permissions=[
-                    {"agent_id": agent1, "permission": "READ"},
-                ],
-                granted_by=admin_id
-            )
+            # Access created permissions
+            for acl in acls:
+                print(f"{acl.agent_id} has {acl.permission} permission")
             ```
         """
         if not self._access_service:
@@ -690,13 +796,7 @@ class DocVaultSDK:
             )
 
         # Convert PermissionGrant objects to dicts for service layer
-        perms_dicts = []
-        for perm in permissions:
-            if isinstance(perm, PermissionGrant):
-                perms_dicts.append(perm.model_dump())
-            else:
-                # Already a dict
-                perms_dicts.append(perm)
+        perms_dicts = [perm.model_dump() for perm in permissions]
 
         return await self._access_service.set_permissions_bulk(
             document_id=document_id,
@@ -710,7 +810,7 @@ class DocVaultSDK:
         self,
         document_id: UUID,
         version_number: int,
-        agent_id: str,
+        agent_id: str | UUID,
         change_description: str,
     ):
         """
@@ -719,7 +819,7 @@ class DocVaultSDK:
         Args:
             document_id: Document UUID
             version_number: Version to restore
-            agent_id: Agent external ID (restorer)
+            agent_id: Agent UUID or string (restorer)
             change_description: Description of the restore
 
         Returns:
@@ -733,18 +833,20 @@ class DocVaultSDK:
             PermissionDeniedError: If agent lacks WRITE permission
             StorageError: If file restoration from storage fails
             RuntimeError: If SDK is not initialized
+
+        Note:
+            agent_id accepts both UUID objects and string representations.
+            The service layer handles automatic UUID conversion.
         """
         if not self._version_service:
             raise RuntimeError(
                 "SDK not initialized. Use 'async with DocVaultSDK() as sdk:'"
             )
-        # Resolve external IDs to UUIDs
-        _, agent_uuid = await self._resolve_external_ids(agent_id=agent_id)
 
         return await self._version_service.restore_version(
             document_id=document_id,
             version_number=version_number,
-            agent_id=agent_uuid,
+            agent_id=agent_id,
             change_description=change_description,
         )
 
