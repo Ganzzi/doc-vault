@@ -2,23 +2,6 @@
 
 Complete API reference for DocVault SDK v2.2.
 
-**What's New in v2.2:**
-- 🎯 **100% Type Safety**: All methods return explicit Pydantic models instead of `Dict[str, Any]`
-- 📦 **Response Models**: `DocumentListResponse`, `SearchResponse`, `DocumentDetails`, `PermissionListResponse`, `OwnershipTransferResponse`
-- 🧠 **Smart Upload Detection**: Automatic detection of file paths vs. text content in uploads
-- 🔒 **Model-Only Permissions**: `set_permissions()` now requires `List[PermissionGrant]` (no dicts)
-- 🧹 **Cleaner API**: Removed legacy v1.x compatibility helpers
-- ✨ **Better IDE Support**: Full autocomplete on all response fields
-- See [MIGRATION_v2.1_to_v2.2.md](./MIGRATION_v2.1_to_v2.2.md) for migration guide
-
-**What's New in v2.1:**
-- 🔒 **Enhanced Security**: Permission viewing restricted to document owners (ADMIN permission)
-- 🎯 **Type Safety**: `PermissionGrant` Pydantic model for type-safe permission operations
-- 📝 **Improved Documentation**: Comprehensive `Raises` sections in all method docstrings
-- 🧹 **API Cleanup**: Removed unused parameters, cleaner method signatures
-- ✅ **Better Validation**: Field-level validation for permissions and UUIDs
-- See [MIGRATION_v2.0_to_v2.1.md](./MIGRATION_v2.0_to_v2.1.md) for migration guide
-
 **Major Changes from v1.x:**
 - UUID-based entity model (organizations & agents use external UUIDs as primary keys)
 - Hierarchical document organization with prefix support
