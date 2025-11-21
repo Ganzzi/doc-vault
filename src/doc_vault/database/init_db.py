@@ -37,8 +37,8 @@ async def detect_database_version(manager: PostgreSQLManager) -> str:
     try:
         # Check if organizations table exists and has external_id column
         query = """
-        SELECT column_name 
-        FROM information_schema.columns 
+        SELECT column_name
+        FROM information_schema.columns
         WHERE table_name = 'organizations' AND column_name = 'external_id'
         """
         result = await manager.execute(query)
@@ -51,8 +51,8 @@ async def detect_database_version(manager: PostgreSQLManager) -> str:
 
         # Check if prefix column exists in documents
         query = """
-        SELECT column_name 
-        FROM information_schema.columns 
+        SELECT column_name
+        FROM information_schema.columns
         WHERE table_name = 'documents' AND column_name = 'prefix'
         """
         result = await manager.execute(query)
@@ -65,8 +65,8 @@ async def detect_database_version(manager: PostgreSQLManager) -> str:
 
         # Check if any tables exist at all
         query = """
-        SELECT table_name 
-        FROM information_schema.tables 
+        SELECT table_name
+        FROM information_schema.tables
         WHERE table_schema = 'public' AND table_name IN ('organizations', 'agents', 'documents')
         """
         result = await manager.execute(query)
@@ -324,7 +324,7 @@ async def main() -> int:
     try:
         # Load configuration from environment
         config = Config.from_env()
-        logger.info(f"Initializing database: {config.postgres.db}")
+        logger.info(f"Initializing database: {config.postgres_db}")
 
         # Initialize v2 database with auto-migration from v1 if needed
         success = await initialize_database(

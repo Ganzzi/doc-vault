@@ -36,7 +36,7 @@ async def main():
             # Register organization
             print("1. Registering organization...")
             org = await vault.register_organization(
-                external_id=org_uuid,
+                org_id=org_uuid,
                 metadata={"test": True},
             )
             print(f"   Organization ID: {org.id}\n")
@@ -44,7 +44,7 @@ async def main():
             # Register agent
             print("2. Registering agent...")
             agent = await vault.register_agent(
-                external_id=agent_uuid,
+                agent_id=agent_uuid,
                 organization_id=org_uuid,
                 metadata={"role": "tester"},
             )

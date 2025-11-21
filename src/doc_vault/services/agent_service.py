@@ -120,7 +120,7 @@ class AgentService:
             raise
         except Exception as e:
             logger.error(f"Failed to register agent: {e}")
-            raise DatabaseError(f"Failed to register agent") from e
+            raise DatabaseError("Failed to register agent") from e
 
     async def get_agent(self, agent_id: UUID | str) -> Agent:
         """
@@ -148,7 +148,7 @@ class AgentService:
             raise
         except Exception as e:
             logger.error(f"Failed to get agent {agent_id}: {e}")
-            raise DatabaseError(f"Failed to get agent") from e
+            raise DatabaseError("Failed to get agent") from e
 
     async def update_agent(
         self,
@@ -198,7 +198,7 @@ class AgentService:
             raise
         except Exception as e:
             logger.error(f"Failed to update agent {agent_id}: {e}")
-            raise DatabaseError(f"Failed to update agent") from e
+            raise DatabaseError("Failed to update agent") from e
 
     async def remove_agent(
         self,
@@ -266,7 +266,7 @@ class AgentService:
             raise
         except Exception as e:
             logger.error(f"Failed to remove agent {agent_id}: {e}")
-            raise DatabaseError(f"Failed to remove agent") from e
+            raise DatabaseError("Failed to remove agent") from e
 
     async def remove_from_organization(
         self,
@@ -310,7 +310,7 @@ class AgentService:
 
         except Exception as e:
             logger.error(f"Failed to remove agent {agent_id} from organization: {e}")
-            raise DatabaseError(f"Failed to remove agent from organization") from e
+            raise DatabaseError("Failed to remove agent from organization") from e
 
     async def get_organization_agents(
         self,
@@ -366,4 +366,4 @@ class AgentService:
             raise
         except Exception as e:
             logger.error(f"Failed to get organization agents: {e}")
-            raise DatabaseError(f"Failed to get organization agents") from e
+            raise DatabaseError("Failed to get organization agents") from e

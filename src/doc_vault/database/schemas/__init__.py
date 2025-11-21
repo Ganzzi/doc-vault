@@ -13,6 +13,7 @@ from .organization import (
     OrganizationCreate,
     OrganizationUpdate,
 )
+from .permission import PermissionGrant
 from .version import (
     DocumentVersion,
     DocumentVersionBase,
@@ -46,4 +47,6 @@ __all__ = [
     "DocumentACLBase",
     "DocumentACLCreate",
     "DocumentACLUpdate",
+    # Permission grant schema (v2.1)
+    "PermissionGrant",
 ]

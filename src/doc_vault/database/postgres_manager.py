@@ -9,7 +9,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from psqlpy import ConnectionPool, Connection
+from psqlpy import Connection, ConnectionPool
 
 from doc_vault.config import Config
 

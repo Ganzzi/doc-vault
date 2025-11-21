@@ -10,11 +10,9 @@ v2.0 Changes:
 """
 
 import logging
-import math
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from doc_vault.database.postgres_manager import PostgreSQLManager
 from doc_vault.database.repositories.base import BaseRepository
 from doc_vault.database.schemas.document import Document, DocumentCreate
 from doc_vault.exceptions import DatabaseError
@@ -151,7 +149,7 @@ class DocumentRepository(BaseRepository[Document]):
             logger.error(f"Failed to get Document by id {id}: {e}")
             from doc_vault.exceptions import DatabaseError
 
-            raise DatabaseError(f"Failed to get Document") from e
+            raise DatabaseError("Failed to get Document") from e
 
     async def update(self, id: UUID, updates: Dict[str, Any]) -> Optional[Document]:
         """
@@ -224,7 +222,7 @@ class DocumentRepository(BaseRepository[Document]):
             logger.error(f"Failed to update Document {id}: {e}")
             from doc_vault.exceptions import DatabaseError
 
-            raise DatabaseError(f"Failed to update Document") from e
+            raise DatabaseError("Failed to update Document") from e
 
     async def get_by_organization(
         self,
@@ -567,8 +565,8 @@ class DocumentRepository(BaseRepository[Document]):
             query = f"""
                 INSERT INTO {self.table_name} ({', '.join(columns)})
                 VALUES ({', '.join(placeholders)})
-                RETURNING id, organization_id, name, description, filename, file_size, 
-                         mime_type, storage_path, current_version, status, created_by, 
+                RETURNING id, organization_id, name, description, filename, file_size,
+                         mime_type, storage_path, current_version, status, created_by,
                          updated_by, metadata, tags, created_at, updated_at
             """
 
@@ -728,7 +726,7 @@ class DocumentRepository(BaseRepository[Document]):
                 # Create pattern for paths up to max depth
                 # E.g., prefix="/reports/" with max_depth=2 allows:
                 # /reports/*, /reports/*/*, but not /reports/*/*/*
-                depth_limit = "/" * (max_allowed_depth + 1)
+                "/" * (max_allowed_depth + 1)
 
             # List all documents recursively under this prefix
             # Exclude search_vector to avoid tsvector issues
@@ -757,7 +755,7 @@ class DocumentRepository(BaseRepository[Document]):
                 # With depth limit: match paths starting with prefix and not exceeding depth
                 query = f"""
                     SELECT {', '.join(columns)} FROM {self.table_name}
-                    WHERE organization_id = $1 
+                    WHERE organization_id = $1
                       AND (prefix LIKE $2 || '%' OR path LIKE $2 || '%')
                       AND (prefix IS NULL OR (prefix NOT LIKE $2 || '%' || '/' || '%/%'))
                       AND status != 'deleted'
@@ -771,7 +769,7 @@ class DocumentRepository(BaseRepository[Document]):
                 # Without depth limit: all documents under prefix
                 query = f"""
                     SELECT {', '.join(columns)} FROM {self.table_name}
-                    WHERE organization_id = $1 
+                    WHERE organization_id = $1
                       AND (prefix LIKE $2 || '%' OR path LIKE $2 || '%')
                       AND status != 'deleted'
                     ORDER BY path ASC

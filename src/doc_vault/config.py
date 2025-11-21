@@ -74,7 +74,6 @@ Configuration Priority (first match wins):
 4. Hardcoded defaults
 """
 
-import os
 import ssl
 from typing import Optional
 

@@ -37,40 +37,49 @@ async def main():
             print("\nSetting up organization and agents...")
 
             org = await vault.register_organization(
-                external_id=org_id,
-                name="Security Corp",
-                metadata={"industry": "security", "classification": "confidential"},
+                org_id=org_id,
+                metadata={
+                    "display_name": "Security Corp",
+                    "industry": "security",
+                    "classification": "confidential",
+                },
             )
             print(f"Organization: {org.id}")
 
             # Create multiple agents with different roles
             admin_agent = await vault.register_agent(
-                external_id=admin_id,
+                agent_id=admin_id,
                 organization_id=org_id,
-                name="Admin User",
-                email="admin@security.com",
-                agent_type="human",
-                metadata={"role": "administrator", "clearance": "top-secret"},
+                metadata={
+                    "name": "Admin User",
+                    "email": "admin@security.com",
+                    "role": "administrator",
+                    "clearance": "top-secret",
+                },
             )
             print(f"Admin agent: {admin_agent.id}")
 
             manager_agent = await vault.register_agent(
-                external_id=manager_id,
+                agent_id=manager_id,
                 organization_id=org_id,
-                name="Manager User",
-                email="manager@security.com",
-                agent_type="human",
-                metadata={"role": "manager", "clearance": "secret"},
+                metadata={
+                    "name": "Manager User",
+                    "email": "manager@security.com",
+                    "role": "manager",
+                    "clearance": "secret",
+                },
             )
             print(f"Manager agent: {manager_agent.id}")
 
             employee_agent = await vault.register_agent(
-                external_id=employee_id,
+                agent_id=employee_id,
                 organization_id=org_id,
-                name="Employee User",
-                email="employee@security.com",
-                agent_type="human",
-                metadata={"role": "employee", "clearance": "confidential"},
+                metadata={
+                    "name": "Employee User",
+                    "email": "employee@security.com",
+                    "role": "employee",
+                    "clearance": "confidential",
+                },
             )
             print(f"Employee agent: {employee_agent.id}")
 
@@ -121,18 +130,20 @@ async def main():
             # Grant permissions using bulk set_permissions
             print("\n--- Granting Permissions ---")
 
+            from doc_vault.database.schemas.permission import PermissionGrant
+
             # Grant manager READ and WRITE permissions
             await vault.set_permissions(
                 document_id=document.id,
                 permissions=[
-                    {
-                        "agent_id": manager_id,
-                        "permission": "READ",
-                    },
-                    {
-                        "agent_id": manager_id,
-                        "permission": "WRITE",
-                    },
+                    PermissionGrant(
+                        agent_id=manager_id,
+                        permission="READ",
+                    ),
+                    PermissionGrant(
+                        agent_id=manager_id,
+                        permission="WRITE",
+                    ),
                 ],
                 granted_by=admin_id,
             )
@@ -142,10 +153,10 @@ async def main():
             await vault.set_permissions(
                 document_id=document.id,
                 permissions=[
-                    {
-                        "agent_id": employee_id,
-                        "permission": "READ",
-                    },
+                    PermissionGrant(
+                        agent_id=employee_id,
+                        permission="READ",
+                    ),
                 ],
                 granted_by=admin_id,
             )
@@ -220,7 +231,9 @@ async def main():
                 (manager_id, "Manager"),
                 (employee_id, "Employee"),
             ]:
-                result = await vault.list_docs(agent_id=agent_id, organization_id=org_id)
+                result = await vault.list_docs(
+                    agent_id=agent_id, organization_id=org_id
+                )
                 docs = result.get("documents", [])
                 print(f"{agent_name} can access {len(docs)} document(s)")
 

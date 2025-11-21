@@ -7,7 +7,6 @@ like S3/MinIO, local filesystem, etc.
 """
 
 from abc import ABC, abstractmethod
-from typing import Protocol
 
 
 class StorageBackend(ABC):

@@ -7,10 +7,8 @@ containing common CRUD operations and database interaction patterns.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar, List, Optional, Any, Dict
+from typing import Any, Dict, Generic, List, Optional, TypeVar
 from uuid import UUID
-
-from psqlpy import QueryResult
 
 from doc_vault.database.postgres_manager import PostgreSQLManager
 from doc_vault.exceptions import DatabaseError

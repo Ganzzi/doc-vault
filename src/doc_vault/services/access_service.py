@@ -135,7 +135,7 @@ class AccessService:
         await self._check_agent_exists(granted_by)
 
         # Check document exists
-        document = await self._check_document_exists(document_id)
+        await self._check_document_exists(document_id)
 
         # Check that granter has permission to share
         await self._check_share_permission(document_id, granted_by)
@@ -473,7 +473,7 @@ class AccessService:
             raise
         except Exception as e:
             logger.error(f"Failed to set permissions for document {document_id}: {e}")
-            raise ValidationError(f"Failed to set permissions") from e
+            raise ValidationError("Failed to set permissions") from e
 
     async def get_permissions(
         self,

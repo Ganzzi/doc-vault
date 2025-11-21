@@ -45,16 +45,15 @@ This directory contains comprehensive planning documentation for DocVault v2.0, 
 
 ---
 
-### 4. [QUICK_REFERENCE.md](./QUICK_REFERENCE.md)
-**Quick migration reference** containing:
-- What's new summary
-- Quick start migration examples
-- API method mapping table
-- Common use cases
-- Troubleshooting guide
-- Migration checklist
+### 4. [v2.1-refinement-plan.md](./v2.1-refinement-plan.md)
+**v2.1 refinement planning document** containing:
+- Technical debt resolution from v2.0
+- Three-phase implementation plan
+- Security enhancements (permission viewing)
+- Type safety improvements (PermissionGrant model)
+- Documentation polish (comprehensive Raises sections)
 
-**Use this when**: You need quick answers during migration or want a cheat sheet for the new API.
+**Use this when**: You need to understand v2.1 improvements over v2.0 or track v2.1 implementation progress.
 
 ---
 
@@ -64,19 +63,15 @@ This directory contains comprehensive planning documentation for DocVault v2.0, 
 1. Start with **v2.0-implementation-plan.md** to understand scope
 2. Use **v2.0-checklist.md** to create project timeline
 3. Review **BREAKING_CHANGES.md** to assess migration complexity
-4. Share **QUICK_REFERENCE.md** with team for quick onboarding
 
 ### For Development
 1. Follow **v2.0-checklist.md** phase by phase
 2. Check off tasks as completed
 3. Reference **v2.0-implementation-plan.md** for implementation details
-4. Use **QUICK_REFERENCE.md** for API syntax
 
 ### For Migration (v1.x → v2.0)
 1. Read **BREAKING_CHANGES.md** first to understand impact
-2. Use **QUICK_REFERENCE.md** for code examples
-3. Follow migration checklist in **QUICK_REFERENCE.md**
-4. Reference **v2.0-implementation-plan.md** for database migration
+2. Reference **v2.0-implementation-plan.md** for database migration
 
 ### For Review
 1. **v2.0-checklist.md** for progress tracking
@@ -158,40 +153,49 @@ This directory contains comprehensive planning documentation for DocVault v2.0, 
 
 ## 🚦 Current Status
 
-**Status**: Code Complete (10/12 phases)  
+**Status**: v2.1.0 Release Complete ✅  
 **Start Date**: November 20, 2025  
-**Current Phase**: Documentation & Examples  
-**Progress**: 83% (10/12 phases completed)
+**v2.0 Release**: November 20, 2025  
+**v2.1 Release**: November 21, 2025  
+**Current Phase**: Production Ready  
+**Progress**: 100% (All phases completed)
 
-### Completed Phases ✅
-- Phase 1: Database Schema & Migration
-- Phase 2: Repository Layer Updates
-- Phase 3: Schema Models & Validation
-- Phase 4: Organization & Agent Management
-- Phase 5: Document Management (Prefix Support)
-- Phase 6: Enhanced Upload System (commit cb155b7)
-- Phase 7: Document Listing & Retrieval (commit 2af2c24)
-- Phase 8: Permissions Refactoring (commit a2a529b)
-- Phase 9: Core SDK Integration (commits 83871bd, e0a4020)
-- Phase 10: Testing & QA (validated)
+### v2.0 Release ✅
+- All 12 phases completed
+- Breaking changes: Entity model, permissions API, hierarchical documents
+- Released: November 20, 2025
 
-### In Progress 🔄
-- Phase 11: Documentation Updates (planning docs, examples, API.md)
+### v2.1 Refinement Release ✅
+- Phase 1: Code Refinement (Security & Type Safety) ✅
+- Phase 2: API Polish (Parameter cleanup) ✅
+- Phase 3: Documentation & Release ✅
+- Released: November 21, 2025
 
-### Remaining ⏳
-- Phase 12: Release Preparation
+### Key v2.1 Improvements
+- **Security**: Permission viewing restricted to ADMIN
+- **Type Safety**: PermissionGrant Pydantic model
+- **API Cleanup**: Removed unused org_id parameters
+- **Documentation**: Comprehensive Raises sections (all 17 methods)
+- **Code Quality**: 58 linting issues resolved
 
 ---
 
 ## 🔗 Related Resources
 
-### Internal
-- `../API.md` - Current v1.x API documentation
-- `../plan/DocVault-implementation-plan.md` - Original v1.0 plan
+### Internal Documentation
+- `../../API.md` - v2.1 API documentation (current)
+- `../../MIGRATION_v2.0_to_v2.1.md` - Migration guide (v2.0 → v2.1)
+- `../../dev/docstring_template.md` - Developer docstring standards
 - `../../README.md` - Main project README
 - `../../CHANGELOG.md` - Version history
 
-### Examples (to be updated for v2.0)
+### Planning Documents
+- `./v2.0-implementation-plan.md` - v2.0 master plan
+- `./v2.0-checklist.md` - v2.0 task tracking
+- `./v2.1-refinement-plan.md` - v2.1 refinement plan
+- `./BREAKING_CHANGES.md` - v2.0 breaking changes
+
+### Examples (Updated for v2.0+)
 - `../../examples/basic_usage.py`
 - `../../examples/access_control.py`
 - `../../examples/versioning.py`
@@ -237,14 +241,16 @@ For questions about v2.0 planning:
 
 | Document | Version | Last Updated | Status |
 |----------|---------|--------------|--------|
-| v2.0-implementation-plan.md | 1.0 | 2025-11-20 | Draft |
-| v2.0-checklist.md | 1.0 | 2025-11-20 | Draft |
-| BREAKING_CHANGES.md | 1.0 | 2025-11-20 | Draft |
-| QUICK_REFERENCE.md | 1.0 | 2025-11-20 | Draft |
-| README.md (this file) | 1.0 | 2025-11-20 | Draft |
+| v2.0-implementation-plan.md | 1.0 | 2025-11-20 | Complete |
+| v2.0-checklist.md | 1.0 | 2025-11-20 | Complete |
+| BREAKING_CHANGES.md | 1.0 | 2025-11-20 | Complete |
+| v2.1-refinement-plan.md | 1.0 | 2025-11-21 | Complete |
+| README.md (this file) | 1.1 | 2025-11-21 | Current |
+| PHASE_9_REWORK_PLAN.md | 1.0 | 2025-11-15 | Archived |
 
 ---
 
 **Planning Phase**: November 2025  
-**Target Release**: Q1 2026  
+**v2.0 Release**: November 20, 2025  
+**v2.1 Release**: November 21, 2025  
 **DocVault Team**

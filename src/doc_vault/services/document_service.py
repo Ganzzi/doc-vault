@@ -740,34 +740,47 @@ class DocumentService:
         metadata: Optional[Dict[str, Any]] = None,
         content_type: Optional[str] = None,
         filename: Optional[str] = None,
+        prefix: Optional[str] = None,
+        create_version: bool = True,
+        change_description: Optional[str] = None,
     ) -> Document:
         """
-        Upload a document with flexible input support (v2.0).
+        Upload a document or create new version if exists (v2.0).
 
-        Supports multiple input types:
+        Supports multiple input types and version control:
         - str: File path to upload
         - bytes: Raw file content
         - BinaryIO: File-like object or stream
 
+        If a document with the same name+org+prefix exists:
+        - If create_version=True: Creates new version (preserves history)
+        - If create_version=False: Replaces current version (no history)
+        - If no document exists: Creates new document
+
         Args:
             file_input: File path (str), bytes, or binary stream
             name: Display name for the document
-            organization_id: Organization UUID
+            organization_id: Organization UUID or string
             agent_id: Agent UUID (uploader)
             description: Optional document description
             tags: Optional list of tags
             metadata: Optional custom metadata
             content_type: Optional explicit MIME type (auto-detected if None)
             filename: Optional override for filename (auto-detected from path/name)
+            prefix: Optional hierarchical prefix (e.g., '/reports/2025/')
+            create_version: If True and document exists, create new version.
+                           If False and document exists, replace current version.
+            change_description: Description of changes (for versioning)
 
         Returns:
-            Created Document instance
+            Document instance (existing or newly created)
 
         Raises:
             ValidationError: If input is invalid
             AgentNotFoundError: If agent doesn't exist
             OrganizationNotFoundError: If organization doesn't exist
             StorageError: If upload fails
+            PermissionDeniedError: If agent lacks WRITE permission (for updates)
         """
         # Ensure UUIDs
         organization_id = self._ensure_uuid(organization_id)
@@ -777,6 +790,126 @@ class DocumentService:
         await self._check_agent_exists(agent_id)
         await self._check_organization_exists(organization_id)
 
+        # Extract file info
+        file_content, detected_filename, file_size = self._extract_file_info(file_input)
+
+        # Use provided filename or detected one
+        final_filename = filename or detected_filename
+        if not final_filename or final_filename == "document":
+            final_filename = f"{name}.bin"
+
+        # Determine MIME type
+        content_type or self._detect_mime_type(final_filename, file_content)
+
+        # Check if document with same name+org+prefix already exists
+        existing_doc = await self._find_existing_document(
+            name=name, organization_id=organization_id, prefix=prefix
+        )
+
+        if existing_doc:
+            # Document exists - handle version control
+            logger.info(
+                f"Document '{name}' already exists. "
+                f"create_version={create_version}, agent={agent_id}"
+            )
+
+            # Use replace_document_content to handle versioning logic
+            return await self.replace_document_content(
+                document_id=existing_doc.id,
+                file_input=file_input,
+                agent_id=agent_id,
+                change_description=change_description or f"Updated: {name}",
+                create_version=create_version,
+                content_type=content_type,
+                filename=filename,
+            )
+        else:
+            # New document - create with current behavior
+            return await self._create_new_document(
+                file_input=file_input,
+                name=name,
+                organization_id=organization_id,
+                agent_id=agent_id,
+                description=description,
+                tags=tags,
+                metadata=metadata,
+                content_type=content_type,
+                filename=filename,
+                prefix=prefix,
+            )
+
+    async def _find_existing_document(
+        self,
+        name: str,
+        organization_id: UUID,
+        prefix: Optional[str] = None,
+    ) -> Optional[Document]:
+        """
+        Find an existing document by name, org, and optional prefix.
+
+        Args:
+            name: Document name
+            organization_id: Organization UUID
+            prefix: Optional prefix
+
+        Returns:
+            Document if found, None otherwise
+        """
+        try:
+            # Search by name in organization
+            docs = await self.document_repo.search_by_name(
+                organization_id=organization_id,
+                name_query=f"^{name}$",  # Exact match
+                limit=1,
+            )
+
+            if not docs:
+                return None
+
+            # If prefix specified, check it matches
+            if prefix is not None:
+                doc = docs[0]
+                if doc.prefix == prefix:
+                    return doc
+                return None
+
+            # No prefix specified, return first match
+            return docs[0]
+        except Exception as e:
+            logger.debug(f"Error finding existing document: {e}")
+            return None
+
+    async def _create_new_document(
+        self,
+        file_input: Union[str, bytes, BinaryIO],
+        name: str,
+        organization_id: UUID,
+        agent_id: UUID,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        content_type: Optional[str] = None,
+        filename: Optional[str] = None,
+        prefix: Optional[str] = None,
+    ) -> Document:
+        """
+        Create a new document from scratch.
+
+        Args:
+            file_input: File path (str), bytes, or binary stream
+            name: Display name
+            organization_id: Organization UUID
+            agent_id: Agent UUID
+            description: Optional description
+            tags: Optional tags
+            metadata: Optional metadata
+            content_type: Optional MIME type
+            filename: Optional filename override
+            prefix: Optional prefix
+
+        Returns:
+            Created Document instance
+        """
         # Extract file info
         file_content, detected_filename, file_size = self._extract_file_info(file_input)
 
@@ -796,6 +929,12 @@ class DocumentService:
         # Ensure bucket exists
         await self._ensure_bucket_exists(bucket_name)
 
+        # Build path from prefix and name
+        if prefix:
+            path = f"{prefix}{name}"
+        else:
+            path = f"/{name}"
+
         # Create document record in transaction
         create_data = DocumentCreate(
             id=document_id,
@@ -806,6 +945,8 @@ class DocumentService:
             file_size=file_size,
             mime_type=mime_type,
             storage_path=storage_path,
+            prefix=prefix,
+            path=path,
             created_by=agent_id,
             tags=tags or [],
             metadata=metadata or {},
@@ -854,7 +995,7 @@ class DocumentService:
                 )
                 await self.version_repo.create_from_create_schema(version_create)
 
-        logger.info(f"Enhanced upload: {document.id} by agent {agent_id}")
+        logger.info(f"Created new document: {document.id} by agent {agent_id}")
         return document
 
     async def replace_document_content(
@@ -1087,7 +1228,7 @@ class DocumentService:
             raise
         except Exception as e:
             logger.error(f"Failed to list documents by prefix: {e}")
-            raise ValidationError(f"Failed to list documents by prefix") from e
+            raise ValidationError("Failed to list documents by prefix") from e
 
     async def list_documents_recursive(
         self,
@@ -1152,7 +1293,7 @@ class DocumentService:
             raise
         except Exception as e:
             logger.error(f"Failed to list documents recursively: {e}")
-            raise ValidationError(f"Failed to list documents recursively") from e
+            raise ValidationError("Failed to list documents recursively") from e
 
     async def upload_document_to_prefix(
         self,
@@ -1289,7 +1430,7 @@ class DocumentService:
             raise
         except Exception as e:
             logger.error(f"Failed to upload document to prefix: {e}")
-            raise StorageError(f"Failed to upload document") from e
+            raise StorageError("Failed to upload document") from e
 
     # Phase 7: Document Listing & Retrieval
 
@@ -1310,14 +1451,14 @@ class DocumentService:
             document_id: Document UUID
             agent_id: Agent UUID (requester)
             include_versions: If True, include full version history
-            include_permissions: If True, include all permissions for document
+            include_permissions: If True, include all permissions for document (requires ADMIN)
 
         Returns:
             Dictionary with document details, versions, and optionally permissions
 
         Raises:
             DocumentNotFoundError: If document doesn't exist
-            PermissionDeniedError: If agent lacks READ permission
+            PermissionDeniedError: If agent lacks READ permission, or if include_permissions=True and agent lacks ADMIN permission
             AgentNotFoundError: If agent doesn't exist
         """
         # Ensure UUIDs
@@ -1373,8 +1514,20 @@ class DocumentService:
                 for v in versions
             ]
 
-        # Include permissions if requested
+        # Include permissions if requested (ADMIN only)
         if include_permissions:
+            # Security check: Only document owners (ADMIN permission) can view permissions
+            agent_acls = await self.acl_repo.get_by_document_and_agent(
+                document_id, agent_id
+            )
+            is_owner = any(acl.permission == "ADMIN" for acl in agent_acls)
+
+            if not is_owner:
+                raise PermissionDeniedError(
+                    "Only document owners (ADMIN permission) can view permissions"
+                )
+
+            # Agent is owner - include all permissions
             acls = await self.acl_repo.get_by_document(document_id)
             details["permissions"] = [
                 {
@@ -1396,6 +1549,9 @@ class DocumentService:
         self,
         organization_id: UUID | str,
         agent_id: UUID | str,
+        prefix: Optional[str] = None,
+        recursive: bool = False,
+        max_depth: Optional[int] = None,
         status: Optional[str] = None,
         tags: Optional[List[str]] = None,
         limit: int = 50,
@@ -1404,13 +1560,17 @@ class DocumentService:
         sort_order: str = "desc",
     ) -> Dict[str, Any]:
         """
-        List documents with comprehensive pagination and sorting (v2.0).
+        List documents with hierarchical filtering, pagination, and sorting (v2.0).
 
-        Enhanced listing with filtering, sorting, and pagination metadata.
+        Enhanced listing with prefix-based hierarchical organization, filtering,
+        sorting, and pagination metadata.
 
         Args:
             organization_id: Organization UUID
             agent_id: Agent UUID (requester)
+            prefix: Optional prefix filter (e.g., '/reports/2025/')
+            recursive: If True, list all documents under prefix recursively
+            max_depth: Maximum recursion depth (None = unlimited)
             status: Optional status filter (active, deleted, archived)
             tags: Optional tag filter (all tags must match)
             limit: Maximum documents per page (1-1000)
@@ -1448,12 +1608,31 @@ class DocumentService:
         await self._check_agent_exists(agent_id)
         await self._check_organization_exists(organization_id)
 
-        # Get documents
-        if tags:
+        # Get documents based on filtering
+        if prefix and recursive:
+            # Recursive listing under prefix with optional depth limit
+            documents = await self.document_repo.list_recursive(
+                organization_id=organization_id,
+                prefix=prefix,
+                max_depth=max_depth,
+                limit=limit,
+                offset=offset,
+            )
+        elif prefix:
+            # Flat listing with exact prefix match
+            documents = await self.document_repo.list_by_prefix(
+                org_id=organization_id,
+                prefix=prefix,
+                limit=limit,
+                offset=offset,
+            )
+        elif tags:
+            # List by tags
             documents = await self.document_repo.get_by_tags(
                 organization_id, tags, limit, offset
             )
         else:
+            # List all documents in organization
             documents = await self.document_repo.get_by_organization(
                 organization_id, status, limit, offset
             )
@@ -1481,6 +1660,7 @@ class DocumentService:
                 "updated_at": d.updated_at.isoformat(),
                 "tags": d.tags,
                 "prefix": d.prefix,
+                "path": d.path,
                 "current_version": d.current_version,
             }
             for d in accessible_docs
@@ -1493,9 +1673,12 @@ class DocumentService:
                 "limit": limit,
                 "offset": offset,
                 "count": len(docs_list),
-                "total_available": len(accessible_docs),  # Approximate
+                "total_available": len(accessible_docs),
             },
             "filters": {
+                "prefix": prefix,
+                "recursive": recursive,
+                "max_depth": max_depth,
                 "status": status,
                 "tags": tags,
                 "sort_by": sort_by,

@@ -7,7 +7,6 @@ supporting both MinIO and AWS S3 as storage backends.
 
 import io
 from typing import Optional
-from urllib.parse import urljoin
 
 from minio import Minio
 from minio.error import S3Error

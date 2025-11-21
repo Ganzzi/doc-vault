@@ -51,9 +51,9 @@ async def main():
             print("\nCreating multiple organizations...")
 
             tech_org = await vault.register_organization(
-                external_id=tech_org_id,
-                name="TechCorp Solutions",
+                org_id=tech_org_id,
                 metadata={
+                    "display_name": "TechCorp Solutions",
                     "industry": "technology",
                     "size": "enterprise",
                     "focus": "software_development",
@@ -62,9 +62,9 @@ async def main():
             print(f"Organization 1: {tech_org.id}")
 
             finance_org = await vault.register_organization(
-                external_id=finance_org_id,
-                name="Finance Group Inc",
+                org_id=finance_org_id,
                 metadata={
+                    "display_name": "Finance Group Inc",
                     "industry": "finance",
                     "size": "large",
                     "focus": "financial_services",
@@ -73,9 +73,9 @@ async def main():
             print(f"Organization 2: {finance_org.id}")
 
             consulting_org = await vault.register_organization(
-                external_id=consulting_org_id,
-                name="Global Consulting LLC",
+                org_id=consulting_org_id,
                 metadata={
+                    "display_name": "Global Consulting LLC",
                     "industry": "consulting",
                     "size": "mid",
                     "focus": "business_consulting",
@@ -88,44 +88,52 @@ async def main():
 
             # TechCorp agents
             tech_lead = await vault.register_agent(
-                external_id=tech_lead_id,
+                agent_id=tech_lead_id,
                 organization_id=tech_org_id,
-                name="Sarah Johnson",
-                email="sarah.johnson@techcorp.com",
-                agent_type="human",
-                metadata={"role": "engineering_lead", "department": "engineering"},
+                metadata={
+                    "name": "Sarah Johnson",
+                    "email": "sarah.johnson@techcorp.com",
+                    "role": "engineering_lead",
+                    "department": "engineering",
+                },
             )
             print(f"TechCorp Lead: {tech_lead.id}")
 
             tech_dev = await vault.register_agent(
-                external_id=tech_dev_id,
+                agent_id=tech_dev_id,
                 organization_id=tech_org_id,
-                name="Mike Chen",
-                email="mike.chen@techcorp.com",
-                agent_type="human",
-                metadata={"role": "developer", "department": "engineering"},
+                metadata={
+                    "name": "Mike Chen",
+                    "email": "mike.chen@techcorp.com",
+                    "role": "developer",
+                    "department": "engineering",
+                },
             )
             print(f"TechCorp Developer: {tech_dev.id}")
 
             # Finance Group agents
             finance_director = await vault.register_agent(
-                external_id=finance_dir_id,
+                agent_id=finance_dir_id,
                 organization_id=finance_org_id,
-                name="Emily Rodriguez",
-                email="emily.rodriguez@finance.com",
-                agent_type="human",
-                metadata={"role": "director", "department": "finance"},
+                metadata={
+                    "name": "Emily Rodriguez",
+                    "email": "emily.rodriguez@finance.com",
+                    "role": "director",
+                    "department": "finance",
+                },
             )
             print(f"Finance Director: {finance_director.id}")
 
             # Consulting agents
             consultant = await vault.register_agent(
-                external_id=consultant_id,
+                agent_id=consultant_id,
                 organization_id=consulting_org_id,
-                name="David Kim",
-                email="david.kim@consulting.com",
-                agent_type="human",
-                metadata={"role": "senior_consultant", "department": "strategy"},
+                metadata={
+                    "name": "David Kim",
+                    "email": "david.kim@consulting.com",
+                    "role": "senior_consultant",
+                    "department": "strategy",
+                },
             )
             print(f"Senior Consultant: {consultant.id}")
 
@@ -340,7 +348,9 @@ async def main():
 
             for org_id in org_ids:
                 agent_id = agent_map[org_id]
-                result = await vault.list_docs(organization_id=org_id, agent_id=agent_id)
+                result = await vault.list_docs(
+                    organization_id=org_id, agent_id=agent_id
+                )
                 docs = result.get("documents", [])
                 print(f"Organization {org_id}: {len(docs)} document(s)")
 

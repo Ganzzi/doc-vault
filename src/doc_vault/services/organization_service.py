@@ -125,7 +125,7 @@ class OrganizationService:
             raise
         except Exception as e:
             logger.error(f"Failed to get organization {org_id}: {e}")
-            raise DatabaseError(f"Failed to get organization") from e
+            raise DatabaseError("Failed to get organization") from e
 
     async def update_organization(
         self,
@@ -171,7 +171,7 @@ class OrganizationService:
             raise
         except Exception as e:
             logger.error(f"Failed to update organization {org_id}: {e}")
-            raise DatabaseError(f"Failed to update organization") from e
+            raise DatabaseError("Failed to update organization") from e
 
     async def delete_organization(
         self,
@@ -237,7 +237,7 @@ class OrganizationService:
             raise
         except Exception as e:
             logger.error(f"Failed to delete organization {org_id}: {e}")
-            raise DatabaseError(f"Failed to delete organization") from e
+            raise DatabaseError("Failed to delete organization") from e
 
     async def list_organizations(
         self,
@@ -271,4 +271,4 @@ class OrganizationService:
             raise
         except Exception as e:
             logger.error(f"Failed to list organizations: {e}")
-            raise DatabaseError(f"Failed to list organizations") from e
+            raise DatabaseError("Failed to list organizations") from e

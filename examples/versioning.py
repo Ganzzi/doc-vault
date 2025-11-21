@@ -54,19 +54,24 @@ async def main():
             print("\n📝 Setting up organization and agent...")
 
             org = await vault.register_organization(
-                external_id=org_id,
-                name="Version Control Inc",
-                metadata={"industry": "software", "focus": "versioning"},
+                org_id=org_id,
+                metadata={
+                    "display_name": "Version Control Inc",
+                    "industry": "software",
+                    "focus": "versioning",
+                },
             )
             print(f"✅ Organization ID: {org.id}")
 
             agent = await vault.register_agent(
-                external_id=author_id,
+                agent_id=author_id,
                 organization_id=org_id,
-                name="Document Author",
-                email="author@version.com",
-                agent_type="human",
-                metadata={"role": "technical_writer", "department": "documentation"},
+                metadata={
+                    "name": "Document Author",
+                    "email": "author@version.com",
+                    "role": "technical_writer",
+                    "department": "documentation",
+                },
             )
             print(f"✅ Agent ID: {agent.id}")
 

@@ -2,12 +2,12 @@
 Basic usage example for DocVault SDK v2.0.
 
 This example demonstrates the core functionality of the DocVault SDK:
-- Organization and agent registration (with UUID external_id)
+- Organization and agent registration (with UUID org_id/agent_id)
 - Document upload and download
 - Access control (unified set_permissions/get_permissions API)
 - Document versioning (get_document_details with include_versions)
 
-Note: In v2.0, external_id for organizations and agents must be valid UUIDs.
+Note: In v2.0, org_id and agent_id for organizations and agents must be valid UUIDs.
 """
 
 import asyncio
@@ -39,19 +39,23 @@ async def main():
             print("\nRegistering organization and agent...")
 
             org = await vault.register_organization(
-                external_id=org_id,
-                name="Example Corporation",
-                metadata={"industry": "technology", "size": "startup"},
+                org_id=org_id,
+                metadata={
+                    "display_name": "Example Corporation",
+                    "industry": "technology",
+                },
             )
             print(f"Organization registered: {org.id}")
 
             agent = await vault.register_agent(
-                external_id=agent1_id,
+                agent_id=agent1_id,
                 organization_id=org_id,
-                name="John Doe",
-                email="john.doe@example.com",
-                agent_type="human",
-                metadata={"role": "administrator", "department": "IT"},
+                metadata={
+                    "name": "John Doe",
+                    "email": "john.doe@example.com",
+                    "role": "administrator",
+                    "department": "IT",
+                },
             )
             print(f"Agent registered: {agent.id}")
 
@@ -128,11 +132,12 @@ async def main():
 
             # Register another agent
             other_agent = await vault.register_agent(
-                external_id=agent2_id,
+                agent_id=agent2_id,
                 organization_id=org_id,
-                name="Jane Smith",
-                email="jane.smith@example.com",
-                agent_type="human",
+                metadata={
+                    "name": "Jane Smith",
+                    "email": "jane.smith@example.com",
+                },
             )
             print(f"Second agent registered: {other_agent.id}")
 
@@ -145,13 +150,15 @@ async def main():
             print(f"   Agent 2 has {len(perms_list)} permissions")
 
             # Grant READ permission to the second agent (v2.0 API)
+            from doc_vault.database.schemas.permission import PermissionGrant
+
             await vault.set_permissions(
                 document_id=document.id,
                 permissions=[
-                    {
-                        "agent_id": agent2_id,
-                        "permission": "READ",
-                    },
+                    PermissionGrant(
+                        agent_id=agent2_id,
+                        permission="READ",
+                    ),
                 ],
                 granted_by=agent1_id,
             )
@@ -184,14 +191,16 @@ async def main():
                 updated_file_path = f.name
 
             try:
-                # Replace the document (creates version 2)
-                new_version = await vault.replace(
-                    document_id=document.id,
-                    file_input=updated_file_path,  # v2.0 uses file_input
+                # Create new version (using upload with create_version=True)
+                new_doc = await vault.upload(
+                    file_input=updated_file_path,
+                    name="Sample Document",  # Same name to trigger versioning
+                    organization_id=org_id,
                     agent_id=agent1_id,
+                    create_version=True,
                     change_description="Updated content with new information",
                 )
-                print(f"New version created: Version {new_version.version_number}")
+                print(f"New version created: Version {new_doc.current_version}")
 
                 # Get document details with version history (v2.0 API)
                 details = await vault.get_document_details(
@@ -218,8 +227,8 @@ async def main():
 
             print("\nDocVault SDK v2.0 demonstration completed successfully!")
             print("\nKey features demonstrated:")
-            print("  - Organization and agent management")
-            print("  - Document upload/download")
+            print("  - Organization and agent management with UUIDs")
+            print("  - Document upload/download with multiple input types")
             print("  - Metadata management")
             print("  - Access control with set_permissions/get_permissions")
             print("  - Document versioning with get_document_details")

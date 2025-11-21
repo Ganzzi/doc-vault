@@ -9,11 +9,11 @@
 
 DocVault provides a complete solution for document upload, management, version control, and access control. It supports multi-organization isolation, role-based permissions, and integrates seamlessly with PostgreSQL and MinIO/S3 storage.
 
-> **📢 v2.0.0 Released!** This is a major release with breaking changes. See [CHANGELOG.md](./CHANGELOG.md) for migration guide. Key changes:
-> - UUID-based entity model (organizations/agents)
-> - Unified permissions API (`set_permissions`, `get_permissions`)
-> - Hierarchical document organization
-> - Removed: `share()`, `revoke()`, `check_permission()`, `get_versions()`
+> **📢 v2.1.0 Released!** Security and type safety refinements over v2.0. See [CHANGELOG.md](./CHANGELOG.md) and [MIGRATION_v2.0_to_v2.1.md](./docs/MIGRATION_v2.0_to_v2.1.md) for details. Key improvements:
+> - Enhanced security: Permission viewing restricted to document owners (ADMIN)
+> - Type safety: PermissionGrant Pydantic model for validated permissions
+> - API cleanup: Removed unused `org_id` parameters from permission methods
+> - Documentation: Comprehensive `Raises` sections for all SDK methods
 
 ## ✨ Features
 

@@ -21,10 +21,10 @@ from .exceptions import (
     ConfigurationError,
     ConnectionError,
     DatabaseError,
-    DocVaultError,
     DocumentDeletedError,
     DocumentError,
     DocumentNotFoundError,
+    DocVaultError,
     DownloadError,
     InitializationError,
     IntegrityError,
@@ -42,7 +42,7 @@ from .exceptions import (
     VersionNotFoundError,
 )
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __all__ = [
     # Main classes
     "DocVaultSDK",

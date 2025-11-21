@@ -1,6 +1,14 @@
-# DocVault SDK v2.0 API Reference
+# DocVault SDK v2.1 API Reference
 
-Complete API reference for DocVault SDK v2.0.
+Complete API reference for DocVault SDK v2.1.
+
+**What's New in v2.1:**
+- 🔒 **Enhanced Security**: Permission viewing restricted to document owners (ADMIN permission)
+- 🎯 **Type Safety**: `PermissionGrant` Pydantic model for type-safe permission operations
+- 📝 **Improved Documentation**: Comprehensive `Raises` sections in all method docstrings
+- 🧹 **API Cleanup**: Removed unused parameters, cleaner method signatures
+- ✅ **Better Validation**: Field-level validation for permissions and UUIDs
+- See [MIGRATION_v2.0_to_v2.1.md](./MIGRATION_v2.0_to_v2.1.md) for migration guide
 
 **Major Changes from v1.x:**
 - UUID-based entity model (organizations & agents use external UUIDs as primary keys)
@@ -8,7 +16,7 @@ Complete API reference for DocVault SDK v2.0.
 - Unified permissions API (`get_permissions` / `set_permissions`)
 - Enhanced upload system (file paths, bytes, streams)
 - Comprehensive document details retrieval
-- See [BREAKING_CHANGES.md](./plan/v2/BREAKING_CHANGES.md) for migration guide
+- See [BREAKING_CHANGES.md](./plan/v2/BREAKING_CHANGES.md) for v1→v2 migration guide
 
 ---
 
@@ -530,7 +538,7 @@ results = await vault.search(
 
 ---
 
-### get_document_details() ⭐ NEW
+### get_document_details() ⭐ NEW (v2.1 Updated)
 
 Get comprehensive document information including versions and permissions.
 
@@ -539,30 +547,42 @@ async def get_document_details(
     document_id: UUID | str,
     agent_id: UUID | str,
     include_versions: bool = True,
-    include_permissions: bool = False,
+    include_permissions: bool = False,  # 🔒 v2.1: Requires ADMIN permission
 ) -> Dict[str, Any]
 ```
+
+**v2.1 Security Enhancement:**
+- 🔒 **Permission Viewing Restricted**: Only document owners (ADMIN permission) can view permissions
+- ✅ Prevents information leakage about document access
+- 🛡️ Non-owners receive `PermissionDeniedError` if `include_permissions=True`
 
 **Replaces:** `get_versions()`, `get_version_info()` from v1.x
 
 **Parameters:**
 - `document_id` (UUID | str): Document UUID
 - `agent_id` (UUID | str): Requester UUID
-- `include_versions` (bool): Include version history
-- `include_permissions` (bool): Include permission details
+- `include_versions` (bool): Include version history (default: True)
+- `include_permissions` (bool): Include permission details (default: False)
+  - ⚠️ **Requires ADMIN permission** on the document
 
 **Returns:** Dictionary with:
-- `document`: Document details
+- `document`: Document details (always included)
 - `versions`: List of versions (if `include_versions=True`)
-- `permissions`: Permission list (if `include_permissions=True`)
+- `permissions`: Permission list (if `include_permissions=True` **and** agent has ADMIN)
+
+**Security Notes:**
+- Any agent with READ permission can get document details and versions
+- **Only ADMIN** permission holders can view permissions (`include_permissions=True`)
+- This prevents non-owners from seeing who else has access to the document
 
 **Example:**
 ```python
+# Get document details with versions (any agent with READ access)
 details = await vault.get_document_details(
     document_id=doc_id,
     agent_id=agent_id,
     include_versions=True,
-    include_permissions=True
+    include_permissions=False  # Safe for non-owners
 )
 
 print(f"Document: {details['document']['name']}")
@@ -571,126 +591,189 @@ print(f"Total versions: {len(details.get('versions', []))}")
 
 for version in details.get('versions', []):
     print(f"  v{version['version_number']}: {version['change_description']}")
+
+# Get permissions (only for document owner/ADMIN)
+try:
+    details_with_perms = await vault.get_document_details(
+        document_id=doc_id,
+        agent_id=owner_id,  # Must be owner/ADMIN
+        include_permissions=True
+    )
+    print(f"Permissions: {details_with_perms['permissions']}")
+except PermissionDeniedError:
+    print("Only document owners can view permissions")
 ```
+
+**Raises:**
+- `DocumentNotFoundError`: If document doesn't exist
+- `PermissionDeniedError`: If agent lacks READ access
+- `PermissionDeniedError`: If `include_permissions=True` and agent doesn't have ADMIN permission
 
 ---
 
 ## Access Control & Permissions
 
-### get_permissions() ⭐ NEW
+### get_permissions() ⭐ NEW (v2.1 Updated)
 
 Get permissions for a document.
 
 ```python
 async def get_permissions(
     document_id: UUID | str,
-    agent_id: UUID | str,
-    org_id: UUID | str,
-    permission_filter: Optional[str] = None,
-) -> List[Dict[str, Any]]
+    agent_id: Optional[UUID | str] = None,
+) -> Dict[str, Any]
 ```
+
+**v2.1 Changes:**
+- ❌ Removed unused `org_id` parameter (permissions are document-scoped)
+- 🎯 Simplified signature for better API clarity
+- 📦 Returns dictionary with metadata instead of plain list
 
 **Replaces:** `get_document_permissions()`, `check_permission()` from v1.x
 
 **Parameters:**
 - `document_id` (UUID | str): Document UUID
-- `agent_id` (UUID | str): Requester UUID (must have ADMIN permission)
-- `org_id` (UUID | str): Organization UUID
-- `permission_filter` (Optional[str]): Filter by permission type
+- `agent_id` (Optional[UUID | str]): Agent UUID to filter permissions for specific agent (None = all permissions)
 
-**Returns:** List of permission dictionaries
+**Returns:** Dictionary with permissions and metadata:
+```python
+{
+    "document_id": str,
+    "permissions": [
+        {
+            "agent_id": str,
+            "permission": str,
+            "granted_by": str,
+            "granted_at": datetime,
+            "expires_at": Optional[datetime],
+            "metadata": Optional[Dict]
+        },
+        ...
+    ],
+    "count": int
+}
+```
 
 **Example:**
 ```python
-# Get all permissions
+# Get all permissions for a document
 perms = await vault.get_permissions(
-    document_id=doc_id,
-    agent_id=admin_id,
-    org_id=org_id
+    document_id=doc_id
 )
 
-for perm in perms:
+print(f"Total permissions: {perms['count']}")
+for perm in perms['permissions']:
     print(f"{perm['agent_id']}: {perm['permission']}")
 
-# Check specific permission
-read_perms = await vault.get_permissions(
+# Get permissions for specific agent
+agent_perms = await vault.get_permissions(
     document_id=doc_id,
-    agent_id=admin_id,
-    org_id=org_id,
-    permission_filter="READ"
+    agent_id=agent_id
 )
+
+if agent_perms['permissions']:
+    print(f"Agent has {len(agent_perms['permissions'])} permissions")
 ```
 
-**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
+**Raises:**
+- `DocumentNotFoundError`: If document doesn't exist
+- `ValidationError`: If document_id is invalid UUID
 
 ---
 
-### set_permissions() ⭐ NEW
+### set_permissions() ⭐ NEW (v2.1 Updated)
 
-Set or update permissions for a document.
+Set or update permissions for a document in bulk.
 
 ```python
 async def set_permissions(
     document_id: UUID | str,
-    org_id: UUID | str,
-    permissions: List[Dict[str, Any]],
+    permissions: List[PermissionGrant],  # 🎯 v2.1: Now uses typed model
     granted_by: UUID | str,
-) -> None
+) -> List[DocumentACL]
 ```
+
+**v2.1 Changes:**
+- 🎯 **Type Safety**: Now accepts `List[PermissionGrant]` instead of `List[dict]`
+- ✅ **Validation**: Automatic field validation through Pydantic
+- 💡 **Better IDE Support**: Full autocomplete and type hints
+- 🔄 **Backward Compatible**: Still accepts `List[dict]` format
+- ❌ Removed unused `org_id` parameter
 
 **Replaces:** `share()`, `revoke()` from v1.x
 
 **Parameters:**
 - `document_id` (UUID | str): Document UUID
-- `org_id` (UUID | str): Organization UUID
-- `permissions` (List[Dict]): List of permission dictionaries
+- `permissions` (List[PermissionGrant]): List of permission grants (see model below)
 - `granted_by` (UUID | str): Granter UUID (must have ADMIN or SHARE permission)
 
-**Permission Dictionary Format:**
+**Returns:** List[DocumentACL] - Created/updated permission records
+
+**PermissionGrant Model (v2.1):**
 ```python
-{
-    "agent_id": str,  # Agent UUID
-    "permission": str,  # READ, WRITE, DELETE, SHARE, ADMIN
-    "expires_at": Optional[datetime],
-    "metadata": Optional[Dict]
-}
+from doc_vault.database.schemas.permission import PermissionGrant
+
+class PermissionGrant(BaseModel):
+    """Type-safe permission grant model."""
+    agent_id: UUID | str          # Agent receiving permission
+    permission: str               # READ, WRITE, DELETE, SHARE, ADMIN
+    expires_at: Optional[datetime] = None
+    metadata: Optional[Dict[str, Any]] = None
 ```
+
+**Validation Rules:**
+- `permission` must be one of: READ, WRITE, DELETE, SHARE, ADMIN
+- `agent_id` must be valid UUID string or UUID object
+- Automatic field validation prevents runtime errors
 
 **Examples:**
 ```python
-# Grant READ permission to one agent
+from doc_vault.database.schemas.permission import PermissionGrant
+
+# 🎯 v2.1 Recommended: Using PermissionGrant model
 await vault.set_permissions(
     document_id=doc_id,
-    org_id=org_id,
+    permissions=[
+        PermissionGrant(
+            agent_id=agent_id,
+            permission="READ"
+        )
+    ],
+    granted_by=admin_id
+)
+
+# 🔄 Backward Compatible: Using dict (still works)
+await vault.set_permissions(
+    document_id=doc_id,
     permissions=[
         {"agent_id": str(agent_id), "permission": "READ"}
     ],
     granted_by=admin_id
 )
 
-# Grant multiple permissions
+# Multiple permissions with typed model
 await vault.set_permissions(
     document_id=doc_id,
-    org_id=org_id,
     permissions=[
-        {"agent_id": str(viewer_id), "permission": "READ"},
-        {"agent_id": str(editor_id), "permission": "WRITE"},
-        {"agent_id": str(admin_id), "permission": "ADMIN"}
+        PermissionGrant(agent_id=viewer_id, permission="READ"),
+        PermissionGrant(agent_id=editor_id, permission="WRITE"),
+        PermissionGrant(agent_id=admin_id, permission="ADMIN"),
     ],
     granted_by=owner_id
 )
 
-# Grant with expiration
+# With expiration
 from datetime import datetime, timedelta
+
 await vault.set_permissions(
     document_id=doc_id,
-    org_id=org_id,
     permissions=[
-        {
-            "agent_id": str(temp_user_id),
-            "permission": "READ",
-            "expires_at": datetime.now() + timedelta(days=7)
-        }
+        PermissionGrant(
+            agent_id=temp_user_id,
+            permission="READ",
+            expires_at=datetime.now() + timedelta(days=7),
+            metadata={"reason": "temporary access for review"}
+        )
     ],
     granted_by=admin_id
 )
@@ -703,7 +786,11 @@ await vault.set_permissions(
 - **SHARE**: Grant permissions to others
 - **ADMIN**: Full control (inherits all permissions)
 
-**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`, `ValidationError`
+**Raises:**
+- `DocumentNotFoundError`: If document doesn't exist
+- `AgentNotFoundError`: If granting agent doesn't exist
+- `PermissionDeniedError`: If granting agent lacks ADMIN/SHARE permission
+- `ValidationError`: If permission data is invalid (e.g., invalid permission level)
 
 ---
 

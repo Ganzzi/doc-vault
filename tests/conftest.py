@@ -203,6 +203,24 @@ async def other_agent(db_manager: PostgreSQLManager, test_org: str) -> str:
 
 
 @pytest.fixture
+async def owner_id(test_agent: str) -> str:
+    """Alias for test_agent as document owner."""
+    return test_agent
+
+
+@pytest.fixture
+async def reader_id(other_agent: str) -> str:
+    """Alias for other_agent as document reader."""
+    return other_agent
+
+
+@pytest.fixture
+async def org_id(test_org: str) -> str:
+    """Alias for test_org as organization ID."""
+    return test_org
+
+
+@pytest.fixture
 async def test_document(
     db_manager: PostgreSQLManager,
     storage_backend: StorageBackend,

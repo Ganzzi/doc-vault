@@ -12,10 +12,9 @@ v2.0 Changes:
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from uuid import UUID
 
-from doc_vault.database.postgres_manager import PostgreSQLManager
 from doc_vault.database.repositories.base import BaseRepository
 from doc_vault.database.schemas.agent import Agent, AgentCreate
 from doc_vault.exceptions import DatabaseError

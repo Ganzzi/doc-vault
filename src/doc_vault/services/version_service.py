@@ -6,7 +6,7 @@ restoring previous versions, and version management.
 """
 
 import logging
-from typing import List, Optional
+from typing import List
 from uuid import UUID
 
 from doc_vault.database.postgres_manager import PostgreSQLManager
@@ -64,7 +64,6 @@ class VersionService:
     async def _check_document_exists(self, document_id: UUID | str) -> Document:
         """Check if a document exists and return it."""
         document_id = self._ensure_uuid(document_id)
-        from doc_vault.database.schemas.document import Document
 
         document = await self.document_repo.get_by_id(document_id)
         if not document:
