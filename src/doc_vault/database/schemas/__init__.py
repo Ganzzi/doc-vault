@@ -21,6 +21,16 @@ from .version import (
     DocumentVersionUpdate,
 )
 
+# Response models (v2.2)
+from .responses import (
+    DocumentDetails,
+    DocumentListResponse,
+    OwnershipTransferResponse,
+    PaginationMeta,
+    PermissionListResponse,
+    SearchResponse,
+)
+
 __all__ = [
     # Organization schemas
     "Organization",
@@ -49,4 +59,11 @@ __all__ = [
     "DocumentACLUpdate",
     # Permission grant schema (v2.1)
     "PermissionGrant",
+    # Response models (v2.2)
+    "PaginationMeta",
+    "DocumentListResponse",
+    "SearchResponse",
+    "DocumentDetails",
+    "PermissionListResponse",
+    "OwnershipTransferResponse",
 ]

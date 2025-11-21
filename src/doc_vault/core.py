@@ -14,6 +14,15 @@ from .database.postgres_manager import PostgreSQLManager
 from .database.repositories.agent import AgentRepository
 from .database.repositories.organization import OrganizationRepository
 from .database.schemas.permission import PermissionGrant
+
+# Response models (v2.2)
+from .database.schemas.responses import (
+    DocumentDetails,
+    DocumentListResponse,
+    OwnershipTransferResponse,
+    PermissionListResponse,
+    SearchResponse,
+)
 from .exceptions import AgentNotFoundError, OrganizationNotFoundError
 from .services.access_service import AccessService
 from .services.document_service import DocumentService

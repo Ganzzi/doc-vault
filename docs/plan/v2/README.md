@@ -57,6 +57,18 @@ This directory contains comprehensive planning documentation for DocVault v2.0, 
 
 ---
 
+### 5. [v2.2-type-safety-plan.md](./v2.2-type-safety-plan.md)
+**v2.2 type safety & API polish document** containing:
+- Response models replacing Dict[str, Any] returns
+- Smart string detection for upload (file path vs. text content)
+- Type-safe permission API (model-only)
+- Removal of obsolete _resolve_external_ids helper
+- Six-phase implementation plan
+
+**Use this when**: You need full type safety, better IDE support, and cleaner API contracts for the SDK.
+
+---
+
 ## 🎯 How to Use These Documents
 
 ### For Project Planning
@@ -153,12 +165,13 @@ This directory contains comprehensive planning documentation for DocVault v2.0, 
 
 ## 🚦 Current Status
 
-**Status**: v2.1.0 Release Complete ✅  
+**Status**: v2.1.0 Release Complete ✅ | v2.2.0 Planning Complete ✅  
 **Start Date**: November 20, 2025  
 **v2.0 Release**: November 20, 2025  
 **v2.1 Release**: November 21, 2025  
-**Current Phase**: Production Ready  
-**Progress**: 100% (All phases completed)
+**v2.2 Target**: December 5, 2025  
+**Current Phase**: Planning v2.2 Implementation  
+**Progress**: 100% (v2.0, v2.1 complete) | 0% (v2.2 not started)
 
 ### v2.0 Release ✅
 - All 12 phases completed
@@ -171,12 +184,28 @@ This directory contains comprehensive planning documentation for DocVault v2.0, 
 - Phase 3: Documentation & Release ✅
 - Released: November 21, 2025
 
-### Key v2.1 Improvements
+### v2.1 Key Improvements
 - **Security**: Permission viewing restricted to ADMIN
 - **Type Safety**: PermissionGrant Pydantic model
 - **API Cleanup**: Removed unused org_id parameters
 - **Documentation**: Comprehensive Raises sections (all 17 methods)
 - **Code Quality**: 58 linting issues resolved
+
+### v2.2 Type Safety Release (Planned)
+- Phase 1: Response Models Creation ⏳
+- Phase 2: Service Layer Updates ⏳
+- Phase 3: Core SDK Signature Updates ⏳
+- Phase 4: Documentation Updates ⏳
+- Phase 5: Testing ⏳
+- Phase 6: Release Preparation ⏳
+- Target Release: December 5, 2025
+
+### v2.2 Planned Improvements
+- **Response Models**: Replace Dict[str, Any] with Pydantic models
+- **Smart Upload**: Automatic file path vs. text content detection
+- **Type Safety**: Model-only permission API (no dicts)
+- **API Consistency**: Remove obsolete _resolve_external_ids helper
+- **Developer Experience**: Full IDE autocomplete and type checking
 
 ---
 
@@ -193,6 +222,7 @@ This directory contains comprehensive planning documentation for DocVault v2.0, 
 - `./v2.0-implementation-plan.md` - v2.0 master plan
 - `./v2.0-checklist.md` - v2.0 task tracking
 - `./v2.1-refinement-plan.md` - v2.1 refinement plan
+- `./v2.2-type-safety-plan.md` - v2.2 type safety plan (NEW)
 - `./BREAKING_CHANGES.md` - v2.0 breaking changes
 
 ### Examples (Updated for v2.0+)
@@ -245,6 +275,7 @@ For questions about v2.0 planning:
 | v2.0-checklist.md | 1.0 | 2025-11-20 | Complete |
 | BREAKING_CHANGES.md | 1.0 | 2025-11-20 | Complete |
 | v2.1-refinement-plan.md | 1.0 | 2025-11-21 | Complete |
+| v2.2-type-safety-plan.md | 1.0 | 2025-11-21 | Planning |
 | README.md (this file) | 1.1 | 2025-11-21 | Current |
 | PHASE_9_REWORK_PLAN.md | 1.0 | 2025-11-15 | Archived |
 
