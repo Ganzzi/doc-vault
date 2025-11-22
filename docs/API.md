@@ -2,14 +2,6 @@
 
 Complete API reference for DocVault SDK v2.2.
 
-**Major Changes from v1.x:**
-- UUID-based entity model (organizations & agents use external UUIDs as primary keys)
-- Hierarchical document organization with prefix support
-- Unified permissions API (`get_permissions` / `set_permissions`)
-- Enhanced upload system (file paths, bytes, streams)
-- Comprehensive document details retrieval
-- See [BREAKING_CHANGES.md](./plan/v2/BREAKING_CHANGES.md) for v1→v2 migration guide
-
 ---
 
 ## Table of Contents
@@ -234,25 +226,23 @@ print(f"New permissions count: {len(result.new_permissions)}")
 
 ### register_organization()
 
-Register a new organization using an external UUID.
+Register a new organization with a UUID.
 
 ```python
 async def register_organization(
-    external_id: str,
-    name: str = None,  # Deprecated in v2.0
+    org_id: str | UUID,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> Organization
 ```
 
 **v2.0 Changes:**
-- `external_id` is now used as the primary UUID
-- `name` parameter is deprecated (kept for v1.x compatibility but ignored)
+- `org_id` is the primary UUID parameter
 - Organizations no longer store name/metadata in their core record
+- Name and other identity information should be stored in external systems
 
 **Parameters:**
-- `external_id` (str): **UUID string** - Must be a valid UUID v4
-- `name` (Optional[str]): Deprecated, ignored in v2.0
-- `metadata` (Optional[Dict]): Custom metadata (stored but not indexed)
+- `org_id` (str | UUID): Organization UUID (can be string or UUID object)
+- `metadata` (Optional[Dict]): Custom metadata (optional, stored but not indexed)
 
 **Returns:** `Organization` - The registered organization
 
@@ -260,14 +250,14 @@ async def register_organization(
 ```python
 import uuid
 
-org_id = str(uuid.uuid4())  # Generate UUID
+org_id = str(uuid.uuid4())  # Generate UUID or use existing
 org = await vault.register_organization(
-    external_id=org_id,
+    org_id=org_id,
     metadata={"industry": "technology"}
 )
 ```
 
-**Raises:** `DatabaseError`, `ValidationError`
+**Raises:** `ValidationError`, `OrganizationExistsError`
 
 ---
 
@@ -277,42 +267,38 @@ Register a new agent (user or AI) within an organization.
 
 ```python
 async def register_agent(
-    external_id: str,
-    organization_id: str,
-    name: str = None,  # Deprecated in v2.0
-    email: str = None,  # Deprecated in v2.0
-    agent_type: str = None,  # Deprecated in v2.0
-    is_active: bool = True,
+    agent_id: str | UUID,
+    organization_id: str | UUID,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> Agent
 ```
 
 **v2.0 Changes:**
-- `external_id` is now used as the primary UUID
-- `name`, `email`, `agent_type` parameters are deprecated
-- Agents no longer store identity information
+- `agent_id` is the primary UUID parameter
+- `organization_id` accepts both string and UUID types
+- Agents no longer store identity information (name, email, agent_type)
+- Identity information should be stored in external systems
 
 **Parameters:**
-- `external_id` (str): **UUID string** - Must be a valid UUID v4
-- `organization_id` (str): Organization UUID
-- `name`, `email`, `agent_type`: Deprecated, ignored in v2.0
-- `is_active` (bool): Whether agent is active (default: True)
-- `metadata` (Optional[Dict]): Custom metadata
+- `agent_id` (str | UUID): Agent UUID (can be string or UUID object)
+- `organization_id` (str | UUID): Organization UUID (can be string or UUID object)
+- `metadata` (Optional[Dict]): Custom metadata (optional, stored but not indexed)
 
 **Returns:** `Agent` - The registered agent
 
 **Example:**
 ```python
+import uuid
+
 agent_id = str(uuid.uuid4())
 agent = await vault.register_agent(
-    external_id=agent_id,
+    agent_id=agent_id,
     organization_id=org_id,
-    is_active=True,
     metadata={"role": "admin"}
 )
 ```
 
-**Raises:** `OrganizationNotFoundError`, `DatabaseError`
+**Raises:** `ValidationError`, `OrganizationNotFoundError`, `AgentExistsError`
 
 ---
 
@@ -374,15 +360,18 @@ Upload a document with support for multiple input types.
 
 ```python
 async def upload(
-    file_path: Union[str, bytes, BinaryIO],
+    file_input: str | bytes | BinaryIO,
     name: str,
     organization_id: str | UUID,
     agent_id: str | UUID,
     description: Optional[str] = None,
     tags: Optional[List[str]] = None,
     metadata: Optional[Dict[str, Any]] = None,
-    prefix: Optional[str] = None,  # ⭐ NEW in v2.0
-    replace_existing: Optional[UUID] = None,  # ⭐ NEW in v2.0
+    content_type: Optional[str] = None,
+    filename: Optional[str] = None,
+    prefix: Optional[str] = None,
+    create_version: bool = True,
+    change_description: Optional[str] = None,
 ) -> Document
 ```
 
@@ -393,10 +382,10 @@ async def upload(
 **v2.0 Enhancements:**
 - **Multiple input types:** file paths (str), bytes, binary streams (BinaryIO)
 - **Hierarchical organization:** `prefix` parameter for organizing documents
-- **Replace option:** `replace_existing` to update document without creating version
+- **Versioning control:** `create_version` parameter to control version history
 
 **Parameters:**
-- `file_path` (str | bytes | BinaryIO): Document content
+- `file_input` (str | bytes | BinaryIO): Document content
   - `str` (file path): If path exists on disk → reads file content
   - `str` (text content): If path doesn't exist → treats as text content ⭐ NEW in v2.2
   - `bytes`: In-memory document content
@@ -407,8 +396,11 @@ async def upload(
 - `description` (Optional[str]): Document description
 - `tags` (Optional[List[str]]): Tags for categorization
 - `metadata` (Optional[Dict]): Custom metadata
+- `content_type` (Optional[str]): MIME type (auto-detected if None)
+- `filename` (Optional[str]): Filename override (auto-generated if None)
 - `prefix` (Optional[str]): Hierarchical prefix (e.g., "/reports/2025/q1")
-- `replace_existing` (Optional[UUID]): Replace this document's content without versioning
+- `create_version` (bool): If True and document exists, create new version; if False, replace content (default: True)
+- `change_description` (Optional[str]): Description of changes (for versioning)
 
 **Returns:** `Document` - The created/updated document
 
@@ -416,7 +408,7 @@ async def upload(
 ```python
 # ⭐ NEW in v2.2: Upload text content directly (no temp file needed!)
 doc = await vault.upload(
-    file_path="This is my document content",  # Text content
+    file_input="This is my document content",  # Text content
     name="Quick Note",
     organization_id=org_id,
     agent_id=agent_id
@@ -424,7 +416,7 @@ doc = await vault.upload(
 
 # Upload from file path (works if file exists)
 doc = await vault.upload(
-    file_path="/path/to/report.pdf",
+    file_input="/path/to/report.pdf",
     name="Q1 Report",
     organization_id=org_id,
     agent_id=agent_id,
@@ -434,7 +426,7 @@ doc = await vault.upload(
 # Upload from bytes
 content = b"Document content here"
 doc = await vault.upload(
-    file_path=content,
+    file_input=content,
     name="In-Memory Document",
     organization_id=org_id,
     agent_id=agent_id
@@ -443,29 +435,40 @@ doc = await vault.upload(
 # Upload from stream
 with open("large_file.pdf", "rb") as f:
     doc = await vault.upload(
-        file_path=f,
+        file_input=f,
         name="Streamed Upload",
         organization_id=org_id,
         agent_id=agent_id
     )
 
-# Replace existing document content
+# Create new version of existing document
 doc = await vault.upload(
-    file_path="/path/to/updated.pdf",
+    file_input="/path/to/updated.pdf",
     name="Updated Report",
     organization_id=org_id,
     agent_id=agent_id,
-    replace_existing=existing_doc_id  # Replaces without versioning
+    create_version=True,
+    change_description="Updated with final data"
+)
+
+# Replace current version without creating new version
+doc = await vault.upload(
+    file_input="/path/to/corrected.pdf",
+    name="Report",
+    organization_id=org_id,
+    agent_id=agent_id,
+    create_version=False,
+    change_description="Fixed typo"
 )
 ```
 
 **Smart String Detection (v2.2):**
-- If `file_path` is a string and the path exists on disk → reads the file
-- If `file_path` is a string and the path doesn't exist → treats as text content
+- If `file_input` is a string and the path exists on disk → reads the file
+- If `file_input` is a string and the path doesn't exist → treats as text content
 - Text content is automatically encoded to UTF-8 and gets default filename "document.txt"
 - For explicit control, use `bytes` or `BinaryIO` types
 
-**Raises:** `AgentNotFoundError`, `OrganizationNotFoundError`, `FileNotFoundError`, `PermissionDeniedError`
+**Raises:** `AgentNotFoundError`, `OrganizationNotFoundError`, `FileNotFoundError`, `PermissionDeniedError`, `ValidationError`
 
 ---
 
@@ -504,42 +507,6 @@ v1_content = await vault.download(
 **Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
 
 ---
-
-### replace()
-
-Replace document content (creates new version).
-
-```python
-async def replace(
-    document_id: UUID | str,
-    file_path: str,
-    agent_id: UUID | str,
-    change_description: str,
-) -> DocumentVersion
-```
-
-**Parameters:**
-- `document_id` (UUID | str): Document UUID
-- `file_path` (str): Path to new content
-- `agent_id` (UUID | str): Updater UUID
-- `change_description` (str): Description of changes
-
-**Returns:** `DocumentVersion` - The new version
-
-**Example:**
-```python
-new_version = await vault.replace(
-    document_id=doc_id,
-    file_path="/path/to/updated.pdf",
-    agent_id=agent_id,
-    change_description="Updated financial projections"
-)
-```
-
-**Raises:** `DocumentNotFoundError`, `PermissionDeniedError`
-
----
-
 ### update_metadata()
 
 Update document metadata without changing content.
@@ -1086,7 +1053,7 @@ await vault.transfer_ownership(
 
 ## Version Management
 
-Versioning is now handled through `get_document_details()` and `replace()`.
+Versioning is handled through `upload()` with `create_version` parameter, `get_document_details()`, and `restore_version()`.
 
 ### Get Version History
 
@@ -1097,9 +1064,9 @@ details = await vault.get_document_details(
     include_versions=True
 )
 
-versions = details.get("versions", [])
-for v in versions:
-    print(f"Version {v['version_number']}: {v['change_description']}")
+if details.versions:
+    for v in details.versions:
+        print(f"Version {v.version_number}: {v.change_description}")
 ```
 
 ### Download Specific Version
@@ -1207,11 +1174,11 @@ except Exception as e:
 
 ### API Method Mapping
 
-| v1.x Method | v2.0 Replacement | Notes |
+| v1.x Method | v2.2 Replacement | Notes |
 |-------------|------------------|-------|
-| `share()` | `set_permissions()` | Bulk API, more flexible |
+| `share()` | `set_permissions()` | Bulk API with PermissionGrant models |
 | `revoke()` | `set_permissions()` | Same method for grant/revoke |
-| `check_permission()` | `get_permissions()` or `check_permissions()` | More efficient bulk checking |
+| `check_permission()` | `get_permissions()` | Returns all permissions, check in code |
 | `list_accessible_documents()` | `list_docs()` | Enhanced with prefix support |
 | `get_document_permissions()` | `get_permissions()` | Unified API |
 | `get_versions()` | `get_document_details(include_versions=True)` | More comprehensive |
@@ -1222,6 +1189,8 @@ except Exception as e:
 #### Sharing Documents
 
 ```python
+from doc_vault.database.schemas.permission import PermissionGrant
+
 # v1.x
 await vault.share(
     document_id=doc_id,
@@ -1230,11 +1199,10 @@ await vault.share(
     granted_by=owner_id
 )
 
-# v2.0
+# v2.2
 await vault.set_permissions(
     document_id=doc_id,
-    org_id=org_id,
-    permissions=[{"agent_id": str(viewer_id), "permission": "READ"}],
+    permissions=[PermissionGrant(agent_id=viewer_id, permission="READ")],
     granted_by=owner_id
 )
 ```
@@ -1249,13 +1217,13 @@ has_read = await vault.check_permission(
     permission="READ"
 )
 
-# v2.0
-perms = await vault.check_permissions(
+# v2.2
+perms = await vault.get_permissions(
     document_id=doc_id,
-    agent_id=agent_id,
-    permissions=["READ"]
+    agent_id=agent_id
 )
-has_read = perms["READ"]
+# Check if agent has READ permission
+has_read = any(p.permission == "READ" for p in perms.permissions) if perms.permissions else False
 ```
 
 #### Getting Version History
@@ -1267,13 +1235,13 @@ versions = await vault.get_versions(
     agent_id=agent_id
 )
 
-# v2.0
+# v2.2
 details = await vault.get_document_details(
     document_id=doc_id,
     agent_id=agent_id,
     include_versions=True
 )
-versions = details.get("versions", [])
+versions = details.versions
 ```
 
 ---
@@ -1305,7 +1273,7 @@ prefixes = {
 }
 
 doc = await vault.upload(
-    file_path=path,
+    file_input=path,
     name="Q1 Report",
     organization_id=org_id,
     agent_id=agent_id,
@@ -1316,12 +1284,13 @@ doc = await vault.upload(
 ### 3. Permission Management
 
 ```python
+from doc_vault.database.schemas.permission import PermissionGrant
+
 # Grant minimal permissions initially
 await vault.set_permissions(
     document_id=doc_id,
-    org_id=org_id,
     permissions=[
-        {"agent_id": str(viewer_id), "permission": "READ"}
+        PermissionGrant(agent_id=viewer_id, permission="READ")
     ],
     granted_by=admin_id
 )
@@ -1329,9 +1298,8 @@ await vault.set_permissions(
 # Escalate only when needed
 await vault.set_permissions(
     document_id=doc_id,
-    org_id=org_id,
     permissions=[
-        {"agent_id": str(viewer_id), "permission": "WRITE"}
+        PermissionGrant(agent_id=viewer_id, permission="WRITE")
     ],
     granted_by=admin_id
 )

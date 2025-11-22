@@ -294,23 +294,16 @@ updated = await vault.update_metadata(
     description="Updated description"
 )
 
-# Replace content (creates new version)
-new_version = await vault.replace(
-    document_id=document.id,
-    file_path="./updated.pdf",
-    agent_id="agent-456",
-    change_description="Updated content"
-)
-
 # Delete document
 await vault.delete(document_id=document.id, agent_id="agent-456")
 
 # List documents
-documents = await vault.list_documents(
+result = await vault.list_docs(
     organization_id="org-123",
     agent_id="agent-456",
     limit=50
 )
+documents = result.documents
 
 # Search documents
 results = await vault.search(
@@ -323,12 +316,14 @@ results = await vault.search(
 ### Access Control
 
 ```python
-# Set permissions for document (v2.0 API)
+# Set permissions for document using PermissionGrant models
+from doc_vault.database.schemas.permission import PermissionGrant
+
 await vault.set_permissions(
     document_id=document.id,
     permissions=[
-        {"agent_id": "agent-789", "permission": "READ"},
-        {"agent_id": "agent-012", "permission": "WRITE"},
+        PermissionGrant(agent_id="agent-789", permission="READ"),
+        PermissionGrant(agent_id="agent-012", permission="WRITE"),
     ],
     granted_by="agent-456"
 )
@@ -338,21 +333,22 @@ perms_result = await vault.get_permissions(
     document_id=document.id,
     agent_id="agent-789"
 )
-perms_list = perms_result.get("permissions", [])
-for p in perms_list:
-    print(f"Permission: {p['permission']}")
+for acl in perms_result.permissions:
+    print(f"Permission: {acl.permission}")
 ```
 
 ### Version Management
 
 ```python
-# Get document details with versions (v2.0 API)
+# Get document details with versions
 details = await vault.get_document_details(
     document_id=document.id,
     agent_id="agent-456",
     include_versions=True
 )
-versions = details.get("versions", [])
+if details.versions:
+    for v in details.versions:
+        print(f"Version {v.version_number}: {v.created_at}")
 
 # Restore previous version
 restored = await vault.restore_version(
@@ -368,16 +364,15 @@ restored = await vault.restore_version(
 ```python
 # Register organization
 org = await vault.register_organization(
-    external_id="org-123",
-    name="My Organization"
+    org_id="550e8400-e29b-41d4-a716-446655440000",
+    metadata={"industry": "technology"}
 )
 
 # Register agent
 agent = await vault.register_agent(
-    external_id="agent-456",
-    organization_id="org-123",
-    name="John Doe",
-    agent_type="human"  # or "ai", "service"
+    agent_id="550e8400-e29b-41d4-a716-446655440001",
+    organization_id=org.id,
+    metadata={"role": "admin"}
 )
 ```
 
