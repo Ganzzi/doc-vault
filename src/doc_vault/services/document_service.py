@@ -812,7 +812,11 @@ class DocumentService:
         # Use provided filename or detected one
         final_filename = filename or detected_filename
         if not final_filename or final_filename == "document":
-            final_filename = f"{name}.bin"
+            # Check if name has extension (v2.3 fix)
+            if Path(name).suffix:
+                final_filename = name
+            else:
+                final_filename = f"{name}.bin"
 
         # Determine MIME type
         content_type or self._detect_mime_type(final_filename, file_content)
@@ -837,7 +841,7 @@ class DocumentService:
                 change_description=change_description or f"Updated: {name}",
                 create_version=create_version,
                 content_type=content_type,
-                filename=filename,
+                filename=final_filename,
             )
         else:
             # New document - create with current behavior
@@ -850,7 +854,7 @@ class DocumentService:
                 tags=tags,
                 metadata=metadata,
                 content_type=content_type,
-                filename=filename,
+                filename=final_filename,
                 prefix=prefix,
             )
 
@@ -932,7 +936,11 @@ class DocumentService:
         # Use provided filename or detected one
         final_filename = filename or detected_filename
         if not final_filename or final_filename == "document":
-            final_filename = f"{name}.bin"
+            # Check if name has extension (v2.3 fix)
+            if Path(name).suffix:
+                final_filename = name
+            else:
+                final_filename = f"{name}.bin"
 
         # Determine MIME type
         mime_type = content_type or self._detect_mime_type(final_filename, file_content)
