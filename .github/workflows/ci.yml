@@ -55,9 +55,10 @@ jobs:
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
     - name: Install dependencies
-      run: uv sync --dev
+      run: uv sync --all-groups --all-extras
 
     - name: Initialize test database
+      if: github.event_name != 'pull_request'
       run: |
         uv run python -m doc_vault.database.init_db
       env:
@@ -67,7 +68,22 @@ jobs:
         POSTGRES_PASSWORD: postgres
         POSTGRES_DB: doc_vault_test
 
-    - name: Run tests
+    - name: Run PR gate tests
+      if: github.event_name == 'pull_request'
+      run: uv run pytest -m "not integration and not e2e" -q --cov=src/doc_vault --cov-report=xml
+      env:
+        POSTGRES_HOST: localhost
+        POSTGRES_PORT: 5432
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_DB: doc_vault_test
+        MINIO_ENDPOINT: localhost:9000
+        MINIO_ACCESS_KEY: minioadmin
+        MINIO_SECRET_KEY: minioadmin
+        MINIO_SECURE: false
+
+    - name: Run full tests
+      if: github.event_name != 'pull_request'
       run: uv run pytest --cov=src/doc_vault --cov-report=xml
       env:
         POSTGRES_HOST: localhost
@@ -103,7 +119,7 @@ jobs:
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
     - name: Install dependencies
-      run: uv sync --dev
+      run: uv sync --all-groups --all-extras
 
     - name: Run ruff linter
       run: uv run ruff check .
