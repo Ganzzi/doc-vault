@@ -145,8 +145,10 @@ addopts = [
     "--cov-report=xml",
 ]
 markers = [
+    "unit: fast tests without external infrastructure",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
+    "e2e: end-to-end tests",
 ]
 asyncio_mode = "auto"
 
