@@ -154,6 +154,12 @@ async def doc_vault_sdk(config: Config) -> AsyncGenerator[DocVaultSDK, None]:
 
 
 @pytest.fixture
+async def vault(doc_vault_sdk: DocVaultSDK) -> AsyncGenerator[DocVaultSDK, None]:
+    """Backward-compatible fixture alias expected by older test modules."""
+    yield doc_vault_sdk
+
+
+@pytest.fixture
 async def test_org(db_manager: PostgreSQLManager) -> str:
     """Create a test organization and return its ID."""
     org_repo = OrganizationRepository(db_manager)
@@ -283,3 +289,20 @@ async def temp_file_v2() -> AsyncGenerator[str, None]:
 
     # Cleanup
     Path(temp_path).unlink(missing_ok=True)
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Apply default markers for deterministic contract execution.
+
+    - Most DocVault tests require external infra (Postgres/MinIO) and are marked
+      as integration by default.
+    - Pure schema/model checks remain unit tests.
+    """
+    for item in items:
+        path = str(item.fspath).replace("\\", "/")
+        filename = path.rsplit("/", 1)[-1]
+
+        if filename == "test_response_models.py":
+            item.add_marker(pytest.mark.unit)
+        else:
+            item.add_marker(pytest.mark.integration)
