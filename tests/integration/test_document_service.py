@@ -6,6 +6,7 @@ functionality with real database operations.
 """
 
 import pytest
+pytestmark = pytest.mark.integration
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4, UUID
 

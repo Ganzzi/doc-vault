@@ -6,6 +6,7 @@ restoring versions, and getting version info.
 """
 
 import pytest
+pytestmark = pytest.mark.integration
 from uuid import uuid4, UUID
 
 from doc_vault.exceptions import (

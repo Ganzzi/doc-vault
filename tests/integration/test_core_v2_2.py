@@ -28,7 +28,7 @@ from doc_vault.database.schemas import (
 from doc_vault.exceptions import PermissionDeniedError
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 class TestListDocsTypeSafe:

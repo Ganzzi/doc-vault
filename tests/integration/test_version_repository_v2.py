@@ -10,6 +10,7 @@ Tests cover:
 """
 
 import pytest
+pytestmark = pytest.mark.integration
 from uuid import uuid4
 
 from doc_vault.database.repositories.version import VersionRepository

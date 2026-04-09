@@ -122,8 +122,8 @@ DocVault supports three configuration patterns:
 
 ```bash
 uv sync --all-groups --all-extras
-uv run pytest -m "not integration and not e2e" -q   # PR gate
-uv run pytest -q                                       # full local
+uv run pytest -m "unit" -q     # PR gate
+uv run pytest -q                # full local
 ```
 
 ## License

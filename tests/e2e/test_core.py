@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+pytestmark = pytest.mark.e2e
 
 from doc_vault import DocVaultSDK
 from doc_vault.config import Config

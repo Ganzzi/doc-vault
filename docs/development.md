@@ -15,7 +15,7 @@ uv sync --all-groups --all-extras
 ## Unit Tests (PR Gate)
 
 ```bash
-uv run pytest -m "not integration and not e2e" -q
+uv run pytest -m "unit" -q
 ```
 
 ## Integration / E2E Tests

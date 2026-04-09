@@ -6,6 +6,7 @@ listing, searching, and permission management.
 """
 
 import pytest
+pytestmark = pytest.mark.integration
 from uuid import uuid4, UUID
 from io import BytesIO
 from typing import Any, Optional, List, Dict

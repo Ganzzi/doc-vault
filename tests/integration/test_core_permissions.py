@@ -13,7 +13,7 @@ from doc_vault.core import DocVaultSDK
 from doc_vault.exceptions import PermissionDeniedError
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 class TestPermissionSecurity:

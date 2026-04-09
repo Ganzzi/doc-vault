@@ -6,6 +6,7 @@ and checking permissions.
 """
 
 import pytest
+pytestmark = pytest.mark.integration
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4, UUID
 

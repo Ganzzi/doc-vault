@@ -7,6 +7,7 @@ focusing on the S3StorageBackend implementation with mocked MinIO client.
 
 import io
 import pytest
+pytestmark = pytest.mark.unit
 from unittest.mock import MagicMock, patch, Mock
 
 from doc_vault.storage.base import (
@@ -42,7 +43,6 @@ class TestS3StorageBackend:
             backend.client = mock_minio_client
             return backend
 
-    @pytest.mark.asyncio
     async def test_upload_success(self, storage_backend, mock_minio_client):
         """Test successful file upload."""
         # Arrange
@@ -67,7 +67,6 @@ class TestS3StorageBackend:
         assert call_args.kwargs["data"].read() == data
         assert result == f"s3://{bucket}/{path}"
 
-    @pytest.mark.asyncio
     async def test_upload_bucket_not_found(self, storage_backend, mock_minio_client):
         """Test upload failure when bucket doesn't exist."""
         # Arrange
@@ -94,7 +93,6 @@ class TestS3StorageBackend:
         assert exc_info.value.bucket == bucket
         assert exc_info.value.path is None  # BucketNotFoundError doesn't set path
 
-    @pytest.mark.asyncio
     async def test_upload_access_denied(self, storage_backend, mock_minio_client):
         """Test upload failure when access is denied."""
         # Arrange
@@ -121,7 +119,6 @@ class TestS3StorageBackend:
         assert exc_info.value.bucket == bucket
         assert exc_info.value.path == path
 
-    @pytest.mark.asyncio
     async def test_download_success(self, storage_backend, mock_minio_client):
         """Test successful file download."""
         # Arrange
@@ -147,7 +144,6 @@ class TestS3StorageBackend:
         mock_response.release_conn.assert_called_once()
         assert result == expected_data
 
-    @pytest.mark.asyncio
     async def test_download_object_not_found(self, storage_backend, mock_minio_client):
         """Test download failure when object doesn't exist."""
         # Arrange
@@ -172,7 +168,6 @@ class TestS3StorageBackend:
         assert exc_info.value.bucket == bucket
         assert exc_info.value.path == path
 
-    @pytest.mark.asyncio
     async def test_download_bucket_not_found(self, storage_backend, mock_minio_client):
         """Test download failure when bucket doesn't exist."""
         # Arrange
@@ -196,7 +191,6 @@ class TestS3StorageBackend:
 
         assert exc_info.value.bucket == bucket
 
-    @pytest.mark.asyncio
     async def test_delete_success(self, storage_backend, mock_minio_client):
         """Test successful file deletion."""
         # Arrange
@@ -212,7 +206,6 @@ class TestS3StorageBackend:
             object_name=path,
         )
 
-    @pytest.mark.asyncio
     async def test_delete_object_not_found(self, storage_backend, mock_minio_client):
         """Test delete when object doesn't exist (should not raise error)."""
         # Arrange
@@ -234,7 +227,6 @@ class TestS3StorageBackend:
         await storage_backend.delete(bucket, path)
         mock_minio_client.remove_object.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_exists_object_exists(self, storage_backend, mock_minio_client):
         """Test exists check when object exists."""
         # Arrange
@@ -251,7 +243,6 @@ class TestS3StorageBackend:
         )
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_exists_object_not_found(self, storage_backend, mock_minio_client):
         """Test exists check when object doesn't exist."""
         # Arrange
@@ -275,7 +266,6 @@ class TestS3StorageBackend:
         # Assert
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_exists_bucket_not_found(self, storage_backend, mock_minio_client):
         """Test exists check when bucket doesn't exist."""
         # Arrange
@@ -299,7 +289,6 @@ class TestS3StorageBackend:
 
         assert exc_info.value.bucket == bucket
 
-    @pytest.mark.asyncio
     async def test_create_bucket_new_bucket(self, storage_backend, mock_minio_client):
         """Test creating a new bucket."""
         # Arrange
@@ -313,7 +302,6 @@ class TestS3StorageBackend:
         mock_minio_client.bucket_exists.assert_called_once_with(bucket_name=bucket)
         mock_minio_client.make_bucket.assert_called_once_with(bucket_name=bucket)
 
-    @pytest.mark.asyncio
     async def test_create_bucket_already_exists(
         self, storage_backend, mock_minio_client
     ):
@@ -329,7 +317,6 @@ class TestS3StorageBackend:
         mock_minio_client.bucket_exists.assert_called_once_with(bucket_name=bucket)
         mock_minio_client.make_bucket.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_create_bucket_access_denied(
         self, storage_backend, mock_minio_client
     ):
@@ -355,7 +342,6 @@ class TestS3StorageBackend:
 
         assert exc_info.value.bucket == bucket
 
-    @pytest.mark.asyncio
     async def test_generate_presigned_url_success(
         self, storage_backend, mock_minio_client
     ):
@@ -379,7 +365,6 @@ class TestS3StorageBackend:
         )
         assert result == expected_url
 
-    @pytest.mark.asyncio
     async def test_generate_presigned_url_object_not_found(
         self, storage_backend, mock_minio_client
     ):

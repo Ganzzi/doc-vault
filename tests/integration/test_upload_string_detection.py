@@ -13,7 +13,7 @@ from doc_vault import DocVaultSDK
 from doc_vault.exceptions import ValidationError
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 class TestUploadStringDetection:

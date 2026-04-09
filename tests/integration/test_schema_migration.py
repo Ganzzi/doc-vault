@@ -11,6 +11,7 @@ Covers:
 
 import asyncio
 import pytest
+pytestmark = pytest.mark.integration
 from datetime import datetime
 from uuid import uuid4
 

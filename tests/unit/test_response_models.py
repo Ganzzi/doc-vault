@@ -11,6 +11,7 @@ Tests all response models introduced in v2.2:
 """
 
 import pytest
+pytestmark = pytest.mark.unit
 from datetime import datetime
 from uuid import uuid4
 from pydantic import ValidationError

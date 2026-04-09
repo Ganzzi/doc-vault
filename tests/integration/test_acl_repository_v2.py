@@ -11,6 +11,7 @@ Tests cover:
 """
 
 import pytest
+pytestmark = pytest.mark.integration
 from uuid import uuid4
 from datetime import datetime, timedelta, timezone
 
