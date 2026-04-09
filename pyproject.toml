@@ -139,16 +139,11 @@ addopts = [
     "--tb=short",
     "--strict-markers",
     "--strict-config",
-    "--cov=src/doc_vault",
-    "--cov-report=term-missing",
-    "--cov-report=html:htmlcov",
-    "--cov-report=xml",
 ]
 markers = [
-    "unit: fast tests without external infrastructure",
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "e2e: end-to-end tests",
+    "unit: no external dependencies",
+    "integration: requires DB/storage/network",
+    "e2e: full system flow",
 ]
 asyncio_mode = "auto"
 
