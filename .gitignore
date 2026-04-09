@@ -171,3 +171,10 @@ test_reports/
 .env.local
 .env.development
 .env.production
+.gitnexus
+.ruff_cache/
+
+# Claude Code / AI assistants
+.claude/
+AGENTS.md
+CLAUDE.md
