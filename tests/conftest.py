@@ -34,7 +34,10 @@ from doc_vault.storage.s3_client import S3StorageBackend
 
 
 # Load environment variables
-load_dotenv()
+# Try .test.env first (for host-local testing), fall back to .env
+test_env_path = Path(__file__).parent.parent / ".test.env"
+load_dotenv(test_env_path, override=True)  # Load test-specific env
+load_dotenv()  # Also load any .env in parent directories
 
 
 @pytest.fixture(scope="session")

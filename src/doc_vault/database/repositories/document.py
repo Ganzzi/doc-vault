@@ -37,6 +37,11 @@ class DocumentRepository(BaseRepository[Document]):
         """Pydantic model class for this repository."""
         return Document
 
+    @property
+    def excluded_columns(self) -> List[str]:
+        """Columns to exclude from SELECT queries (tsvector not supported by psqlpy)."""
+        return ["search_vector"]
+
     def _row_to_model(self, row: Dict[str, Any]) -> Document:
         """
         Convert database row dict to Document model.

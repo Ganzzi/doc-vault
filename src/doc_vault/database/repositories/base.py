@@ -71,6 +71,11 @@ class BaseRepository(ABC, Generic[T]):
         """Pydantic model class for this repository."""
         pass
 
+    @property
+    def excluded_columns(self) -> List[str]:
+        """Columns to exclude from SELECT * queries (e.g., tsvector columns)."""
+        return []
+
     @abstractmethod
     def _row_to_model(self, row: Dict[str, Any]) -> T:
         """
@@ -118,10 +123,26 @@ class BaseRepository(ABC, Generic[T]):
             placeholders = [f"${i+1}" for i in range(len(columns))]
             values = list(data.values())
 
+            # Build RETURNING clause to exclude unsupported types (e.g., tsvector)
+            # Must include database-generated fields like 'id' and 'created_at'
+            excluded = self.excluded_columns
+            if excluded:
+                # Include all inserted columns plus common db-generated fields, excluding unsupported types
+                returning_cols = ", ".join([c for c in columns if c not in excluded])
+                # Add common db-generated fields if not already present
+                for gen_field in ["id", "created_at", "updated_at"]:
+                    if gen_field not in columns and gen_field not in excluded:
+                        returning_cols = f"{returning_cols}, {gen_field}" if returning_cols else gen_field
+                if not returning_cols:
+                    # Fallback if all columns are excluded (shouldn't happen)
+                    returning_cols = "*"
+            else:
+                returning_cols = "*"
+
             query = f"""
                 INSERT INTO {self.table_name} ({', '.join(columns)})
                 VALUES ({', '.join(placeholders)})
-                RETURNING *
+                RETURNING {returning_cols}
             """
 
             logger.debug(f"Creating {self.model_class.__name__}: {query}")
@@ -146,15 +167,31 @@ class BaseRepository(ABC, Generic[T]):
             Model instance or None if not found
         """
         try:
+            # Exclude unsupported columns (e.g., tsvector) from SELECT
+            excluded = self.excluded_columns
+            if excluded:
+                # Use a safe list of columns - model fields minus excluded ones
+                # This is a simple approach; for production, consider querying information_schema
+                select_cols = "*"
+                # Note: We can't easily list all columns without a schema query
+                # For now, we rely on _row_to_model to filter out unexpected keys
+            else:
+                select_cols = "*"
+
             # Use string interpolation for UUID since psqlpy has issues with UUID parameters
-            query = f"SELECT * FROM {self.table_name} WHERE id = '{str(id)}'"
+            query = f"SELECT {select_cols} FROM {self.table_name} WHERE id = '{str(id)}'"
             result = await self.db_manager.execute(query)
 
             rows = result.result()
             if not rows:
                 return None
 
-            return self._row_to_model(rows[0])
+            # Filter out excluded columns from the row
+            row = rows[0]
+            if excluded:
+                row = {k: v for k, v in row.items() if k not in excluded}
+
+            return self._row_to_model(row)
 
         except Exception as e:
             logger.error(f"Failed to get {self.model_class.__name__} by id {id}: {e}")
